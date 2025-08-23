@@ -128,6 +128,13 @@ export interface EnhancedQueryResult {
     riskData: string;
     boundaryData: string;
   };
+  meta?: {
+    queryProcessed?: string;
+    resultsCount?: number;
+    processingTime?: string;
+    aiProcessed?: boolean;
+    geminiUsed?: boolean;
+  };
 }
 
 // City-specific configurations

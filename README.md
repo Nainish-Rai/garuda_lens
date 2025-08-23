@@ -4,12 +4,13 @@ A Next.js application featuring an intelligent map interface with natural langua
 
 ## Features
 
-🗺️ **Fullscreen Mapbox Integration** - Interactive map with multiple layer support
-🧠 **Natural Language Queries** - AI-powered query processing (e.g., "Show me neighborhoods in Mumbai where property values rose >30% and flood risk increased since 2015")
-📊 **Multi-layer Visualization** - Property price heatmaps, climate risk overlays, and boundary data
+🗺️ **Interactive Leaflet Integration** - Interactive map with multiple layer support and enhanced highlighting
+🧠 **Gemini AI Natural Language Queries** - Google AI-powered query processing with intelligent fallback (e.g., "Show me wards in Pune where property values rose >30% and flood risk increased since 2015")
+📊 **Multi-layer Visualization** - Property price heatmaps, climate risk overlays, and boundary data with enhanced visual feedback
 ⏰ **Time Warp Controls** - Interactive time range slider for temporal analysis
-📱 **Smart Side Panel** - Evidence-based summaries with stats, insights, and data sources
-🎯 **Intelligent Highlighting** - Automatic zoom and highlight of relevant areas
+📱 **Smart Side Panel** - AI-generated insights, evidence-based summaries with stats, and data sources
+🎯 **Intelligent Highlighting** - Automatic zoom and animated highlight of relevant areas with glow effects
+✨ **Enhanced Visual Feedback** - Pulsing animations and visual indicators for search results
 
 ## Setup Instructions
 
@@ -19,16 +20,19 @@ A Next.js application featuring an intelligent map interface with natural langua
 npm install
 ```
 
-### 2. Configure Mapbox Access Token
+### 2. Configure Gemini AI (Optional)
 
-1. Sign up for a free [Mapbox account](https://account.mapbox.com/)
-2. Get your access token from the [Mapbox Access Tokens page](https://account.mapbox.com/access-tokens/)
-3. Create a `.env.local` file in the project root:
+For enhanced AI-powered natural language processing:
+
+1. Get your Gemini API key from [Google AI Studio](https://makersuite.google.com/app/apikey)
+2. Create a `.env.local` file in the project root:
 
 ```bash
 # .env.local
-NEXT_PUBLIC_MAPBOX_ACCESS_TOKEN=pk.your-mapbox-token-here
+GEMINI_API_KEY=your_gemini_api_key_here
 ```
+
+**Note:** The application will work without this API key, using a fallback natural language processor, but Gemini AI provides more accurate query understanding and better insights.
 
 ### 3. Run the Development Server
 
@@ -48,9 +52,10 @@ Open [http://localhost:3000](http://localhost:3000) with your browser to see the
 
 The application supports intelligent natural language queries. Here are some examples:
 
-- `"Show me neighborhoods in Mumbai where property values rose >30% and flood risk increased since 2015"`
-- `"Find areas in Delhi with property appreciation over 25% since 2020"`
-- `"Display neighborhoods with high climate risk and rising property prices"`
+- `"Show me wards in Pune where property values rose >30% and flood risk increased since 2015"`
+- `"Find areas in Pune with property appreciation over 25% since 2020"`
+- `"Display Kothrud area analysis"`
+- `"Show me Aundh ward with high flood risk"`
 
 ### Map Controls
 
@@ -67,9 +72,11 @@ The application supports intelligent natural language queries. Here are some exa
 ## Technology Stack
 
 - **Frontend**: Next.js 15, React 19, TypeScript
-- **Maps**: Mapbox GL JS, React Map GL
+- **Maps**: Leaflet, React Leaflet
+- **AI**: Google Gemini AI for natural language processing
 - **UI**: Tailwind CSS, shadcn/ui components
 - **Icons**: Lucide React
+- **Styling**: Custom CSS animations for enhanced visual feedback
 
 ## Learn More
 

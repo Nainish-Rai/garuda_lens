@@ -279,34 +279,79 @@ export default function MapInterface() {
     setTimeRange(newTime);
   }, []);
 
-  // Style function for property heatmap
+  // Style function for property heatmap with enhanced highlighting
   const getPropertyHeatmapStyle = (feature?: {
-    properties?: { priceChange?: number };
+    properties?: { priceChange?: number; name?: string };
   }) => {
     const priceChange = feature?.properties?.priceChange || 0;
+    const isHighlighted =
+      queryResult &&
+      queryResult.polygons.some(
+        (polygon) => polygon.properties.name === feature?.properties?.name
+      );
+
     let color = "#f7fbff";
+    let borderColor = "#08519c";
+    let borderWidth = 2;
+    let fillOpacity = activeLayers.propertyHeatmap ? 0.7 : 0;
+
     if (priceChange >= 50) color = "#08519c";
     else if (priceChange >= 40) color = "#6baed6";
     else if (priceChange >= 30) color = "#c6dbef";
     else if (priceChange >= 20) color = "#deebf7";
 
+    // Enhanced highlighting for search results
+    if (isHighlighted) {
+      borderColor = "#ff4444";
+      borderWidth = 4;
+      fillOpacity = 0.9;
+      // Add a glow effect
+      return {
+        fillColor: color,
+        fillOpacity: fillOpacity,
+        color: borderColor,
+        weight: borderWidth,
+        opacity: 1,
+        dashArray: "5, 5",
+        className: "highlighted-area animate-pulse",
+      };
+    }
+
     return {
       fillColor: color,
-      fillOpacity: activeLayers.propertyHeatmap ? 0.7 : 0,
-      color: "#08519c",
-      weight: 2,
+      fillOpacity: fillOpacity,
+      color: borderColor,
+      weight: borderWidth,
       opacity: activeLayers.propertyHeatmap ? 0.8 : 0,
     };
   };
 
-  // Style function for climate risk overlay
+  // Style function for climate risk overlay with enhanced highlighting
   const getClimateRiskStyle = (feature?: {
-    properties?: { floodRisk?: number };
+    properties?: { floodRisk?: number; name?: string };
   }) => {
     const floodRisk = feature?.properties?.floodRisk || 0;
+    const isHighlighted =
+      queryResult &&
+      queryResult.polygons.some(
+        (polygon) => polygon.properties.name === feature?.properties?.name
+      );
+
     let color = "rgba(255, 255, 0, 0.1)";
     if (floodRisk >= 50) color = "rgba(255, 0, 0, 0.5)";
     else if (floodRisk >= 25) color = "rgba(255, 165, 0, 0.3)";
+
+    // Enhanced highlighting for search results
+    if (isHighlighted) {
+      return {
+        fillColor: "rgba(255, 68, 68, 0.6)",
+        fillOpacity: activeLayers.climateRisk ? 0.6 : 0,
+        color: "#ff4444",
+        weight: 3,
+        opacity: 0.8,
+        dashArray: "10, 5",
+      };
+    }
 
     return {
       fillColor: color,
@@ -683,11 +728,16 @@ export default function MapInterface() {
 
                   {/* AI Insights */}
                   {queryResult.insights && (
-                    <Card>
+                    <Card className="query-result-indicator">
                       <CardHeader>
                         <CardTitle className="text-lg flex items-center gap-2">
                           <BarChart3 className="h-5 w-5" />
                           AI Insights
+                          {queryResult?.meta?.geminiUsed && (
+                            <span className="ml-2 px-2 py-1 text-xs bg-gradient-to-r from-blue-500 to-purple-600 text-white rounded-full">
+                              Gemini AI
+                            </span>
+                          )}
                         </CardTitle>
                       </CardHeader>
                       <CardContent>

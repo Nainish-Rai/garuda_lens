@@ -294,7 +294,8 @@ export class MockDataGenerator {
     query: string
   ): Promise<EnhancedQueryResult> {
     try {
-      const response = await fetch("/api/query", {
+      // Try Gemini-powered endpoint first, fallback to basic endpoint
+      const response = await fetch("/api/gemini-query", {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
@@ -302,11 +303,25 @@ export class MockDataGenerator {
         body: JSON.stringify({ query }),
       });
 
+      let data;
       if (!response.ok) {
-        throw new Error("API request failed");
-      }
+        // Fallback to basic query endpoint
+        const fallbackResponse = await fetch("/api/query", {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({ query }),
+        });
 
-      const data = await response.json();
+        if (!fallbackResponse.ok) {
+          throw new Error("Both API endpoints failed");
+        }
+
+        data = await fallbackResponse.json();
+      } else {
+        data = await response.json();
+      }
 
       // Convert API response to map-compatible format
       return {
@@ -349,6 +364,12 @@ export class MockDataGenerator {
           propertyData: "NHB RESIDEX",
           riskData: "CWC Flood Hazard Maps + PMC GIS",
           boundaryData: "Pune Municipal Corporation GIS",
+        },
+        meta: data.meta || {
+          queryProcessed: query,
+          resultsCount: data.results.length,
+          aiProcessed: true,
+          geminiUsed: data.meta?.geminiUsed || false,
         },
       };
     } catch (error) {

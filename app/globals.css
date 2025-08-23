@@ -140,3 +140,43 @@
 .leaflet-control-container {
   z-index: 5;
 }
+
+/* Enhanced highlighting for map areas */
+.highlighted-area {
+  animation: highlightPulse 2s ease-in-out infinite;
+  filter: drop-shadow(0 0 8px rgba(255, 68, 68, 0.8));
+}
+
+@keyframes highlightPulse {
+  0%,
+  100% {
+    opacity: 0.8;
+    transform: scale(1);
+  }
+  50% {
+    opacity: 1;
+    transform: scale(1.02);
+  }
+}
+
+/* Glow effect for highlighted borders */
+.leaflet-interactive.highlighted-area {
+  filter: drop-shadow(0 0 10px rgba(255, 68, 68, 0.9))
+    drop-shadow(0 0 20px rgba(255, 68, 68, 0.6));
+}
+
+/* Enhanced query result indicator */
+.query-result-indicator {
+  animation: fadeInScale 0.5s ease-out;
+}
+
+@keyframes fadeInScale {
+  0% {
+    opacity: 0;
+    transform: scale(0.8);
+  }
+  100% {
+    opacity: 1;
+    transform: scale(1);
+  }
+}

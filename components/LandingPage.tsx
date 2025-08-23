@@ -35,11 +35,26 @@ export default function LandingPage({
       exit={{ opacity: 0 }}
       transition={{ duration: 0.6, ease: "easeOut" }}
       className={cn(
-        "min-h-screen  flex items-center justify-center bg-gradient-to-br from-background via-background/80 to-muted/50",
+        "min-h-screen  flex items-center justify-center bg-transparent",
         className
       )}
     >
-      <div className="w-full max-w-4xl px-6">
+      {/* background video  */}
+      <video
+        src="/video.webm"
+        autoPlay
+        loop
+        muted
+        className="absolute inset-0 block dark:hidden -z-0 w-full h-full object-cover"
+      />
+      <video
+        src="/video2.webm"
+        autoPlay
+        loop
+        muted
+        className="absolute inset-0 hidden dark:block opacity-20 -z-0 w-full h-full object-cover"
+      />
+      <div className="w-full max-w-4xl z-10 px-6">
         {/* Header Section */}
         <motion.div
           initial={{ y: 30, opacity: 0 }}
@@ -47,9 +62,12 @@ export default function LandingPage({
           transition={{ delay: 0.2, duration: 0.8, ease: "easeOut" }}
           className="text-center mb-12"
         >
-          <h1 className="text-5xl md:text-7xl font-bold bg-gradient-to-r from-foreground via-foreground/90 to-foreground/70 bg-clip-text text-transparent mb-4">
-            Garuda Lens
-          </h1>
+          <div className="flex items-center justify-center">
+            <img src="/logo.png" className="w-36 h-36" alt="Garuda Lens Logo" />
+            <h1 className="text-5xl md:text-7xl font-semibold dark:bg-gradient-to-r dark:from-foreground dark:via-foreground/90 dark:to-foreground/70 dark:bg-clip-text dark:text-transparent  -ml-6 text-white">
+              Garuda Lens
+            </h1>
+          </div>
 
           <p className=" text-muted-foreground max-w-2xl mx-auto leading-relaxed">
             Ask anything about property insights, climate risks, and market

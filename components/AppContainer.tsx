@@ -130,7 +130,7 @@ export default function AppContainer() {
             animate={{ opacity: 1, scale: 1, y: 0 }}
             exit={{ opacity: 0, scale: 0.8, y: 20 }}
             transition={{ delay: 0.8, duration: 0.3 }}
-            className="absolute bottom-6 left-6 z-40"
+            className="absolute top-6 left-100 z-40"
           >
             <motion.button
               whileHover={{ scale: 1.05 }}

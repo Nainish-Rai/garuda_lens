@@ -17,6 +17,7 @@ import {
 } from "lucide-react";
 import { RealDataAPIClient } from "./QueryProcessor";
 import { CITY_CONFIGS, type EnhancedQueryResult } from "@/lib/types";
+import { cn } from "@/lib/utils";
 import "leaflet/dist/leaflet.css";
 
 interface ViewState {
@@ -40,7 +41,15 @@ function FitBounds({ bounds }: { bounds?: LatLngBounds }) {
   return null;
 }
 
-export default function MapInterface() {
+interface MapInterfaceProps {
+  queryResult?: EnhancedQueryResult | null;
+  className?: string;
+}
+
+export default function MapInterface({
+  queryResult: externalQueryResult,
+  className,
+}: MapInterfaceProps) {
   const mapRef = useRef<LeafletMap>(null);
   const [currentCity, setCurrentCity] = useState<string>("pune");
   const [viewState, setViewState] = useState<ViewState>(() => {
@@ -165,11 +174,14 @@ export default function MapInterface() {
     loadBaseMapData();
   }, [currentCity]);
 
+  // Use external query result if provided, otherwise use internal state
+  const displayQueryResult = externalQueryResult || queryResult;
+
   // Generate map data from query results or use base map data
-  const mapData = queryResult
+  const mapData = displayQueryResult
     ? {
         type: "FeatureCollection" as const,
-        features: queryResult.polygons.map((polygon) => ({
+        features: displayQueryResult.polygons.map((polygon) => ({
           type: "Feature" as const,
           geometry: {
             type: "Polygon" as const,
@@ -263,8 +275,8 @@ export default function MapInterface() {
   }) => {
     const priceChange = feature?.properties?.priceChange || 0;
     const isHighlighted =
-      queryResult &&
-      queryResult.polygons.some(
+      displayQueryResult &&
+      displayQueryResult.polygons.some(
         (polygon) => polygon.properties.name === feature?.properties?.name
       );
 
@@ -310,8 +322,8 @@ export default function MapInterface() {
   }) => {
     const floodRisk = feature?.properties?.floodRisk || 0;
     const isHighlighted =
-      queryResult &&
-      queryResult.polygons.some(
+      displayQueryResult &&
+      displayQueryResult.polygons.some(
         (polygon) => polygon.properties.name === feature?.properties?.name
       );
 
@@ -382,7 +394,7 @@ export default function MapInterface() {
   };
 
   return (
-    <div className="relative w-full h-screen overflow-hidden">
+    <div className={cn("relative w-full h-screen overflow-hidden", className)}>
       {/* Natural Language Query Bar */}
       <div className="absolute top-4 left-1/2 transform -translate-x-1/2 z-10 w-full max-w-2xl px-0">
         <Card className="bg-white/80 backdrop-blur-sm rounded-full border-0">

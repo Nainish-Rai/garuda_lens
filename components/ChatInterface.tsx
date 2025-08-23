@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState, useEffect, useCallback } from "react";
+import React, { useState, useCallback, useRef } from "react";
 import { motion } from "framer-motion";
 import { Textarea } from "@/components/ui/textarea";
 import { Button } from "@/components/ui/button";
@@ -40,8 +40,7 @@ export default function ChatInterface({
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [currentInput, setCurrentInput] = useState("");
   const [isProcessing, setIsProcessing] = useState(false);
-  const [hasProcessedInitialQuery, setHasProcessedInitialQuery] =
-    useState(false);
+  const hasProcessedInitialQuery = useRef(false);
 
   const handleQuerySubmit = useCallback(
     async (query?: string) => {
@@ -72,6 +71,10 @@ export default function ChatInterface({
         const stages = [
           "Parsing natural language query...",
           "Searching property databases...",
+          "Pulling images from satellite...",
+          "Analyzing images...",
+          "Running deep learning models...  ",
+
           "Analyzing climate risk data...",
           "Generating insights...",
         ];
@@ -219,18 +222,14 @@ The map has been updated to highlight the relevant areas. You can explore the de
     [currentInput, isProcessing, onMapUpdate]
   );
 
-  // Process initial query if provided
-  useEffect(() => {
-    if (initialQuery && messages.length === 0 && !hasProcessedInitialQuery) {
-      setHasProcessedInitialQuery(true);
-      handleQuerySubmit(initialQuery);
+  // Handle initial query processing without useEffect
+  React.useMemo(() => {
+    if (initialQuery && !hasProcessedInitialQuery.current) {
+      hasProcessedInitialQuery.current = true;
+      // Use queueMicrotask to avoid state updates during render
+      queueMicrotask(() => handleQuerySubmit(initialQuery));
     }
-  }, [
-    initialQuery,
-    messages.length,
-    hasProcessedInitialQuery,
-    handleQuerySubmit,
-  ]);
+  }, [initialQuery, handleQuerySubmit]);
 
   const copyToClipboard = (text: string) => {
     navigator.clipboard.writeText(text);

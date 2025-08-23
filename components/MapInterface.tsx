@@ -338,29 +338,26 @@ export default function MapInterface({
         className
       )}
     >
-      {/* City Selector & Layer Controls */}
+      {/* City Selector & Layer Controls - Minimal */}
       <div className="absolute top-4 left-4 z-10">
-        <Card className="bg-card/95 backdrop-blur-sm shadow-lg border border-border/50">
-          <CardContent className="p-3">
+        <Card className="bg-card/70 backdrop-blur-md shadow-md border border-border/30">
+          <CardContent className="p-2">
             {/* City Selector */}
-            <div className="mb-3 pb-3 border-b border-border">
-              <label className="block text-sm font-medium mb-2 text-foreground">
-                City
-              </label>
-              <select
-                value={currentCity}
-                onChange={(e) => handleCityChange(e.target.value)}
-                className="w-full p-2 text-sm border border-border rounded focus:outline-none focus:ring-2 focus:ring-ring bg-background text-foreground"
-              >
-                {Object.entries(CITY_CONFIGS).map(([key, config]) => (
-                  <option key={key} value={key}>
-                    {config.name}
-                  </option>
-                ))}
-              </select>
-            </div>
-            <div className="space-y-2">
-              <label className="flex items-center space-x-2 text-sm text-foreground">
+            <select
+              value={currentCity}
+              onChange={(e) => handleCityChange(e.target.value)}
+              className="w-full mb-2 px-2 py-1 text-xs border border-border/50 rounded focus:outline-none focus:ring-1 focus:ring-ring bg-background text-foreground"
+            >
+              {Object.entries(CITY_CONFIGS).map(([key, config]) => (
+                <option key={key} value={key}>
+                  {config.name}
+                </option>
+              ))}
+            </select>
+
+            {/* Layer Toggles */}
+            <div className="space-y-1">
+              <label className="flex items-center space-x-1.5 text-xs text-foreground cursor-pointer">
                 <input
                   type="checkbox"
                   checked={activeLayers.propertyHeatmap}
@@ -370,12 +367,12 @@ export default function MapInterface({
                       propertyHeatmap: e.target.checked,
                     }))
                   }
-                  className="rounded border-border bg-background"
+                  className="w-3 h-3 rounded border-border bg-background"
                 />
-                <TrendingUp className="h-4 w-4" />
-                <span>Property Heatmap</span>
+                <TrendingUp className="h-3 w-3" />
+                <span>Heatmap</span>
               </label>
-              <label className="flex items-center space-x-2 text-sm text-foreground">
+              <label className="flex items-center space-x-1.5 text-xs text-foreground cursor-pointer">
                 <input
                   type="checkbox"
                   checked={activeLayers.climateRisk}
@@ -385,12 +382,12 @@ export default function MapInterface({
                       climateRisk: e.target.checked,
                     }))
                   }
-                  className="rounded border-border bg-background"
+                  className="w-3 h-3 rounded border-border bg-background"
                 />
-                <Droplets className="h-4 w-4" />
-                <span>Climate Risk</span>
+                <Droplets className="h-3 w-3" />
+                <span>Risk</span>
               </label>
-              <label className="flex items-center space-x-2 text-sm text-foreground">
+              <label className="flex items-center space-x-1.5 text-xs text-foreground cursor-pointer">
                 <input
                   type="checkbox"
                   checked={activeLayers.boundaries}
@@ -400,10 +397,10 @@ export default function MapInterface({
                       boundaries: e.target.checked,
                     }))
                   }
-                  className="rounded border-border bg-background"
+                  className="w-3 h-3 rounded border-border bg-background"
                 />
-                <MapPin className="h-4 w-4" />
-                <span>Boundaries</span>
+                <MapPin className="h-3 w-3" />
+                <span>Bounds</span>
               </label>
             </div>
           </CardContent>
@@ -445,49 +442,6 @@ export default function MapInterface({
           />
         )}
       </MapContainer>
-
-      {/* Time Warp Slider */}
-      <div className="absolute bottom-8 left-1/2 transform -translate-x-1/2 z-10 w-full max-w-md px-4">
-        <Card className="bg-card/95 backdrop-blur-sm shadow-lg border border-border/50">
-          <CardContent className="p-4">
-            <div className="space-y-2">
-              <div className="flex items-center justify-between text-sm font-medium text-foreground">
-                <span className="flex items-center gap-1">
-                  <Calendar className="h-4 w-4" />
-                  Time Range
-                </span>
-                <span>
-                  {timeRange[0]} - {timeRange[1]}
-                </span>
-              </div>
-              <div className="flex items-center space-x-4">
-                <span className="text-xs text-muted-foreground">2010</span>
-                <input
-                  type="range"
-                  min="2010"
-                  max="2024"
-                  value={timeRange[0]}
-                  onChange={(e) =>
-                    handleTimeChange([parseInt(e.target.value), timeRange[1]])
-                  }
-                  className="flex-1 h-2 bg-muted rounded-lg appearance-none cursor-pointer"
-                />
-                <input
-                  type="range"
-                  min="2010"
-                  max="2024"
-                  value={timeRange[1]}
-                  onChange={(e) =>
-                    handleTimeChange([timeRange[0], parseInt(e.target.value)])
-                  }
-                  className="flex-1 h-2 bg-muted rounded-lg appearance-none cursor-pointer"
-                />
-                <span className="text-xs text-muted-foreground">2024</span>
-              </div>
-            </div>
-          </CardContent>
-        </Card>
-      </div>
     </div>
   );
 }

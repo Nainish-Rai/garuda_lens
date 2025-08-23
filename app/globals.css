@@ -349,6 +349,94 @@
   animation: shimmer 2s infinite;
 }
 
+/* Dashboard and Chart Styles */
+.recharts-wrapper {
+  color: hsl(var(--foreground));
+}
+
+.recharts-cartesian-axis-tick-value {
+  fill: hsl(var(--muted-foreground));
+}
+
+.recharts-legend-item-text {
+  color: hsl(var(--foreground)) !important;
+}
+
+.recharts-tooltip-wrapper {
+  outline: none !important;
+}
+
+/* Enhanced table styles */
+.dashboard-table {
+  border-collapse: separate;
+  border-spacing: 0;
+}
+
+.dashboard-table th,
+.dashboard-table td {
+  border: none;
+  border-bottom: 1px solid hsl(var(--border));
+}
+
+.dashboard-table th {
+  background: hsl(var(--muted) / 0.3);
+  font-weight: 600;
+  text-align: left;
+}
+
+.dashboard-table tbody tr:hover {
+  background: hsl(var(--muted) / 0.2);
+  transition: background-color 0.2s ease;
+}
+
+/* Chart animation enhancements */
+.recharts-bar,
+.recharts-area,
+.recharts-line,
+.recharts-pie-sector {
+  transition: all 0.3s ease;
+}
+
+.recharts-bar:hover,
+.recharts-pie-sector:hover {
+  opacity: 0.8;
+  filter: brightness(1.1);
+}
+
+/* Tab animation enhancements */
+.tabs-content-enter {
+  opacity: 0;
+  transform: translateX(20px);
+}
+
+.tabs-content-enter-active {
+  opacity: 1;
+  transform: translateX(0);
+  transition: opacity 300ms ease, transform 300ms ease;
+}
+
+.tabs-content-exit {
+  opacity: 1;
+  transform: translateX(0);
+}
+
+.tabs-content-exit-active {
+  opacity: 0;
+  transform: translateX(-20px);
+  transition: opacity 300ms ease, transform 300ms ease;
+}
+
+/* Dashboard specific responsive design */
+@media (max-width: 768px) {
+  .dashboard-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .chart-container {
+    height: 250px;
+  }
+}
+
 @layer base {
   * {
     @apply border-border outline-ring/50;

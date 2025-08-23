@@ -8,12 +8,12 @@ import ChatInterface from "./ChatInterface";
 import { ThemeToggle } from "./ThemeToggle";
 import type { EnhancedQueryResult } from "@/lib/types";
 
-// Import MapInterface dynamically to avoid SSR issues with Leaflet
-const MapInterface = dynamic(() => import("./MapInterface"), {
+// Import MapDashboardInterface dynamically to avoid SSR issues with Leaflet
+const MapDashboardInterface = dynamic(() => import("./MapDashboardInterface"), {
   ssr: false,
   loading: () => (
-    <div className="flex items-center justify-center h-full bg-muted/30 rounded-lg">
-      <div className="text-lg text-muted-foreground">Loading map...</div>
+    <div className="flex items-center justify-center bg-transparent h-full  rounded-lg">
+      <div className="text-lg text-muted-foreground">Loading interface...</div>
     </div>
   ),
 });
@@ -115,7 +115,10 @@ export default function AppContainer() {
                 }}
                 className="flex-1 h-full relative"
               >
-                <MapInterface queryResult={mapData} className="h-full" />
+                <MapDashboardInterface
+                  queryResult={mapData}
+                  className="h-full"
+                />
               </motion.div>
             </div>
           </motion.div>

@@ -21,10 +21,17 @@ export default function LandingPage({
   className,
 }: LandingPageProps) {
   const [query, setQuery] = useState("");
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  const [lastSubmittedQuery, setLastSubmittedQuery] = useState("");
 
   const handleSubmit = () => {
-    if (query.trim()) {
-      onQuerySubmit(query.trim());
+    const trimmedQuery = query.trim();
+    if (trimmedQuery && !isSubmitting && trimmedQuery !== lastSubmittedQuery) {
+      setIsSubmitting(true);
+      setLastSubmittedQuery(trimmedQuery);
+      onQuerySubmit(trimmedQuery);
+      // Reset after a short delay to prevent rapid re-submission
+      setTimeout(() => setIsSubmitting(false), 500);
     }
   };
 
@@ -99,7 +106,7 @@ export default function LandingPage({
               <PromptInputActions>
                 <Button
                   onClick={handleSubmit}
-                  disabled={!query.trim()}
+                  disabled={!query.trim() || isSubmitting}
                   size="lg"
                   className="rounded-2xl h-12 px-6 bg-primary hover:bg-primary/90 transition-all duration-200 shadow-lg hover:shadow-xl"
                 >
@@ -134,8 +141,17 @@ export default function LandingPage({
                 initial={{ opacity: 0, y: 20 }}
                 animate={{ opacity: 1, y: 0 }}
                 transition={{ delay: 0.8 + index * 0.1, duration: 0.5 }}
-                onClick={() => onQuerySubmit(example)}
-                className="text-left p-4 rounded-xl bg-card  border border-border hover:bg-card/50 hover:border-border/50 transition-all duration-200 text-sm text-muted-foreground hover:text-foreground group"
+                onClick={() => {
+                  if (!isSubmitting && example !== lastSubmittedQuery) {
+                    setQuery(example);
+                    setIsSubmitting(true);
+                    setLastSubmittedQuery(example);
+                    onQuerySubmit(example);
+                    setTimeout(() => setIsSubmitting(false), 500);
+                  }
+                }}
+                disabled={isSubmitting}
+                className="text-left p-4 rounded-xl bg-card  border border-border hover:bg-card/50 hover:border-border/50 transition-all duration-200 text-sm text-muted-foreground hover:text-foreground group disabled:opacity-50 disabled:cursor-not-allowed"
               >
                 <div className="flex items-start gap-3">
                   <div className="h-2 w-2 rounded-full bg-primary/50 mt-2 group-hover:bg-primary transition-colors" />

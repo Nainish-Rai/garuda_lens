@@ -3,19 +3,8 @@
 import React, { useState, useRef, useCallback, useEffect } from "react";
 import { MapContainer, TileLayer, GeoJSON, useMap } from "react-leaflet";
 import { Map as LeafletMap, LatLngBounds } from "leaflet";
-import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import {
-  Search,
-  Calendar,
-  MapPin,
-  TrendingUp,
-  Droplets,
-  Brain,
-  BarChart3,
-} from "lucide-react";
-import { RealDataAPIClient } from "./QueryProcessor";
+import { Card, CardContent } from "@/components/ui/card";
+import { Calendar, MapPin, TrendingUp, Droplets } from "lucide-react";
 import { CITY_CONFIGS, type EnhancedQueryResult } from "@/lib/types";
 import { cn } from "@/lib/utils";
 import "leaflet/dist/leaflet.css";
@@ -61,12 +50,7 @@ export default function MapInterface({
   });
   const [mapBounds, setMapBounds] = useState<LatLngBounds | undefined>();
 
-  const [query, setQuery] = useState("");
   const [timeRange, setTimeRange] = useState([2015, 2024]);
-  const [isQuerying, setIsQuerying] = useState(false);
-  const [queryResult, setQueryResult] = useState<QueryResult | null>(null);
-  const [showSidePanel, setShowSidePanel] = useState(false);
-  const [processingStage, setProcessingStage] = useState("");
   const [activeLayers, setActiveLayers] = useState({
     propertyHeatmap: true,
     climateRisk: true,
@@ -83,9 +67,6 @@ export default function MapInterface({
         zoom: cityConfig.zoom,
       });
       // Clear previous results when switching cities
-      setQueryResult(null);
-      setShowSidePanel(false);
-      setQuery("");
     }
   };
 
@@ -174,8 +155,35 @@ export default function MapInterface({
     loadBaseMapData();
   }, [currentCity]);
 
-  // Use external query result if provided, otherwise use internal state
-  const displayQueryResult = externalQueryResult || queryResult;
+  // Use external query result only
+  const displayQueryResult = externalQueryResult;
+
+  // Auto-fit map bounds when external query result changes
+  useEffect(() => {
+    if (
+      displayQueryResult?.polygons &&
+      displayQueryResult.polygons.length > 0
+    ) {
+      // Calculate bounds from polygon coordinates
+      let minLng = Infinity,
+        minLat = Infinity,
+        maxLng = -Infinity,
+        maxLat = -Infinity;
+
+      displayQueryResult.polygons.forEach((polygon) => {
+        polygon.coordinates[0].forEach((coord) => {
+          const [lng, lat] = coord;
+          minLng = Math.min(minLng, lng);
+          maxLng = Math.max(maxLng, lng);
+          minLat = Math.min(minLat, lat);
+          maxLat = Math.max(maxLat, lat);
+        });
+      });
+
+      const bounds = new LatLngBounds([minLat, minLng], [maxLat, maxLng]);
+      setMapBounds(bounds);
+    }
+  }, [displayQueryResult]);
 
   // Generate map data from query results or use base map data
   const mapData = displayQueryResult
@@ -194,76 +202,6 @@ export default function MapInterface({
         type: "FeatureCollection" as const,
         features: baseMapData,
       };
-
-  const handleQuery = useCallback(async () => {
-    if (!query.trim()) return;
-
-    setIsQuerying(true);
-    setShowSidePanel(true);
-    setProcessingStage("Parsing natural language query...");
-
-    try {
-      // Add current city context to query if not specified
-      const enhancedQuery = query
-        .toLowerCase()
-        .includes(currentCity.toLowerCase())
-        ? query
-        : `${query} in ${currentCity}`;
-
-      // Process the natural language query
-      await new Promise((resolve) => setTimeout(resolve, 800));
-
-      setProcessingStage("Searching property databases...");
-      await new Promise((resolve) => setTimeout(resolve, 700));
-
-      setProcessingStage("Analyzing climate risk data...");
-      await new Promise((resolve) => setTimeout(resolve, 600));
-
-      setProcessingStage("Generating insights...");
-      await new Promise((resolve) => setTimeout(resolve, 400));
-
-      // Use real API to get data
-      let result: QueryResult;
-      try {
-        result = await RealDataAPIClient.queryNaturalLanguageAPI(enhancedQuery);
-      } catch (error) {
-        console.error("Failed to fetch real data:", error);
-        setIsQuerying(false);
-        setProcessingStage("Error: Unable to fetch data. Please try again.");
-        return;
-      }
-
-      setQueryResult(result);
-      setIsQuerying(false);
-      setProcessingStage("");
-
-      // Zoom to fit the results
-      if (result.polygons.length > 0) {
-        // Calculate bounds from polygon coordinates
-        let minLng = Infinity,
-          minLat = Infinity,
-          maxLng = -Infinity,
-          maxLat = -Infinity;
-
-        result.polygons.forEach((polygon) => {
-          polygon.coordinates[0].forEach((coord) => {
-            const [lng, lat] = coord;
-            minLng = Math.min(minLng, lng);
-            maxLng = Math.max(maxLng, lng);
-            minLat = Math.min(minLat, lat);
-            maxLat = Math.max(maxLat, lat);
-          });
-        });
-
-        const bounds = new LatLngBounds([minLat, minLng], [maxLat, maxLng]);
-        setMapBounds(bounds);
-      }
-    } catch (error) {
-      console.error("Query processing failed:", error);
-      setIsQuerying(false);
-      setProcessingStage("");
-    }
-  }, [query, currentCity]);
 
   const handleTimeChange = useCallback((newTime: number[]) => {
     setTimeRange(newTime);
@@ -394,45 +332,25 @@ export default function MapInterface({
   };
 
   return (
-    <div className={cn("relative w-full h-screen overflow-hidden", className)}>
-      {/* Natural Language Query Bar */}
-      <div className="absolute top-4 left-1/2 transform -translate-x-1/2 z-10 w-full max-w-2xl px-0">
-        <Card className="bg-white/80 backdrop-blur-sm rounded-full border-0">
-          <CardContent className="">
-            <div className="flex gap-2">
-              <div className="relative flex-1">
-                <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-gray-400" />
-                <Input
-                  placeholder={`Show me wards in ${currentCity} where property values rose >30% and flood risk increased since 2015...`}
-                  value={query}
-                  onChange={(e) => setQuery(e.target.value)}
-                  className="pl-10 pr-4 rounded-full h-12 text-sm"
-                  onKeyPress={(e) => e.key === "Enter" && handleQuery()}
-                />
-              </div>
-              <Button
-                onClick={handleQuery}
-                disabled={isQuerying || !query.trim()}
-                className="h-12 px-6 rounded-full"
-              >
-                {isQuerying ? "Analyzing..." : "Search"}
-              </Button>
-            </div>
-          </CardContent>
-        </Card>
-      </div>
-
+    <div
+      className={cn(
+        "relative w-full h-screen overflow-hidden bg-background",
+        className
+      )}
+    >
       {/* City Selector & Layer Controls */}
       <div className="absolute top-4 left-4 z-10">
-        <Card className="bg-white/95 backdrop-blur-sm shadow-lg border-0">
+        <Card className="bg-card/95 backdrop-blur-sm shadow-lg border border-border/50">
           <CardContent className="p-3">
             {/* City Selector */}
-            <div className="mb-3 pb-3 border-b border-gray-200">
-              <label className="block text-sm font-medium mb-2">City</label>
+            <div className="mb-3 pb-3 border-b border-border">
+              <label className="block text-sm font-medium mb-2 text-foreground">
+                City
+              </label>
               <select
                 value={currentCity}
                 onChange={(e) => handleCityChange(e.target.value)}
-                className="w-full p-2 text-sm border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-blue-500"
+                className="w-full p-2 text-sm border border-border rounded focus:outline-none focus:ring-2 focus:ring-ring bg-background text-foreground"
               >
                 {Object.entries(CITY_CONFIGS).map(([key, config]) => (
                   <option key={key} value={key}>
@@ -442,7 +360,7 @@ export default function MapInterface({
               </select>
             </div>
             <div className="space-y-2">
-              <label className="flex items-center space-x-2 text-sm">
+              <label className="flex items-center space-x-2 text-sm text-foreground">
                 <input
                   type="checkbox"
                   checked={activeLayers.propertyHeatmap}
@@ -452,12 +370,12 @@ export default function MapInterface({
                       propertyHeatmap: e.target.checked,
                     }))
                   }
-                  className="rounded"
+                  className="rounded border-border bg-background"
                 />
                 <TrendingUp className="h-4 w-4" />
                 <span>Property Heatmap</span>
               </label>
-              <label className="flex items-center space-x-2 text-sm">
+              <label className="flex items-center space-x-2 text-sm text-foreground">
                 <input
                   type="checkbox"
                   checked={activeLayers.climateRisk}
@@ -467,12 +385,12 @@ export default function MapInterface({
                       climateRisk: e.target.checked,
                     }))
                   }
-                  className="rounded"
+                  className="rounded border-border bg-background"
                 />
                 <Droplets className="h-4 w-4" />
                 <span>Climate Risk</span>
               </label>
-              <label className="flex items-center space-x-2 text-sm">
+              <label className="flex items-center space-x-2 text-sm text-foreground">
                 <input
                   type="checkbox"
                   checked={activeLayers.boundaries}
@@ -482,7 +400,7 @@ export default function MapInterface({
                       boundaries: e.target.checked,
                     }))
                   }
-                  className="rounded"
+                  className="rounded border-border bg-background"
                 />
                 <MapPin className="h-4 w-4" />
                 <span>Boundaries</span>
@@ -530,10 +448,10 @@ export default function MapInterface({
 
       {/* Time Warp Slider */}
       <div className="absolute bottom-8 left-1/2 transform -translate-x-1/2 z-10 w-full max-w-md px-4">
-        <Card className="bg-white/95 backdrop-blur-sm shadow-lg border-0">
+        <Card className="bg-card/95 backdrop-blur-sm shadow-lg border border-border/50">
           <CardContent className="p-4">
             <div className="space-y-2">
-              <div className="flex items-center justify-between text-sm font-medium">
+              <div className="flex items-center justify-between text-sm font-medium text-foreground">
                 <span className="flex items-center gap-1">
                   <Calendar className="h-4 w-4" />
                   Time Range
@@ -543,7 +461,7 @@ export default function MapInterface({
                 </span>
               </div>
               <div className="flex items-center space-x-4">
-                <span className="text-xs text-gray-500">2010</span>
+                <span className="text-xs text-muted-foreground">2010</span>
                 <input
                   type="range"
                   min="2010"
@@ -552,7 +470,7 @@ export default function MapInterface({
                   onChange={(e) =>
                     handleTimeChange([parseInt(e.target.value), timeRange[1]])
                   }
-                  className="flex-1 h-2 bg-gray-200 rounded-lg appearance-none cursor-pointer"
+                  className="flex-1 h-2 bg-muted rounded-lg appearance-none cursor-pointer"
                 />
                 <input
                   type="range"
@@ -562,231 +480,14 @@ export default function MapInterface({
                   onChange={(e) =>
                     handleTimeChange([timeRange[0], parseInt(e.target.value)])
                   }
-                  className="flex-1 h-2 bg-gray-200 rounded-lg appearance-none cursor-pointer"
+                  className="flex-1 h-2 bg-muted rounded-lg appearance-none cursor-pointer"
                 />
-                <span className="text-xs text-gray-500">2024</span>
+                <span className="text-xs text-muted-foreground">2024</span>
               </div>
             </div>
           </CardContent>
         </Card>
       </div>
-
-      {/* Side Panel */}
-      {showSidePanel && (
-        <div className="absolute top-0 right-0 w-96 h-full bg-white shadow-2xl z-20 overflow-y-auto">
-          <div className="p-6">
-            <div className="flex items-center justify-between mb-6">
-              <h2 className="text-xl font-bold">Query Results</h2>
-              <Button
-                variant="ghost"
-                size="sm"
-                onClick={() => setShowSidePanel(false)}
-              >
-                ×
-              </Button>
-            </div>
-
-            {isQuerying ? (
-              <div className="space-y-4">
-                <div className="flex items-center space-x-3">
-                  <Brain className="h-5 w-5 text-blue-500 animate-spin" />
-                  <span className="text-sm font-medium">AI Processing</span>
-                </div>
-                <div className="space-y-2">
-                  <div className="text-sm text-gray-600">{processingStage}</div>
-                  <div className="w-full bg-gray-200 rounded-full h-2">
-                    <div
-                      className="bg-blue-500 h-2 rounded-full animate-pulse"
-                      style={{ width: "70%" }}
-                    ></div>
-                  </div>
-                </div>
-                <div className="text-xs text-gray-500">
-                  Analyzing property data, climate patterns, and market
-                  trends...
-                </div>
-              </div>
-            ) : (
-              queryResult && (
-                <div className="space-y-6">
-                  {/* Summary */}
-                  <Card>
-                    <CardHeader>
-                      <CardTitle className="text-lg">Summary</CardTitle>
-                    </CardHeader>
-                    <CardContent className="space-y-3">
-                      <div className="flex justify-between">
-                        <span className="text-sm text-gray-600">
-                          Areas Found:
-                        </span>
-                        <span className="font-medium">
-                          {queryResult.summary.totalAreas}
-                        </span>
-                      </div>
-                      <div className="flex justify-between">
-                        <span className="text-sm text-gray-600">
-                          Avg Price Increase:
-                        </span>
-                        <span className="font-medium text-green-600">
-                          +{queryResult.summary.avgPriceIncrease}%
-                        </span>
-                      </div>
-                      <div className="flex justify-between">
-                        <span className="text-sm text-gray-600">
-                          Avg Flood Risk:
-                        </span>
-                        <span className="font-medium text-orange-600">
-                          {queryResult.summary.avgFloodRiskIncrease}%
-                        </span>
-                      </div>
-                      <div className="flex justify-between">
-                        <span className="text-sm text-gray-600">
-                          Time Period:
-                        </span>
-                        <span className="font-medium">
-                          {queryResult.summary.timeRange}
-                        </span>
-                      </div>
-                      {queryResult.summary.totalPopulation && (
-                        <div className="flex justify-between">
-                          <span className="text-sm text-gray-600">
-                            Population Affected:
-                          </span>
-                          <span className="font-medium">
-                            {(
-                              queryResult.summary.totalPopulation / 1000
-                            ).toFixed(0)}
-                            K
-                          </span>
-                        </div>
-                      )}
-                    </CardContent>
-                  </Card>
-
-                  {/* Individual Areas */}
-                  <div className="space-y-3">
-                    <h3 className="font-semibold">Matching Areas</h3>
-                    {queryResult.polygons.map((polygon) => (
-                      <Card key={polygon.id}>
-                        <CardContent className="p-4">
-                          <h4 className="font-medium mb-2">
-                            {polygon.properties.name}
-                          </h4>
-                          <div className="space-y-1 text-sm">
-                            <div className="flex justify-between">
-                              <span className="text-gray-600">
-                                Price Change:
-                              </span>
-                              <span className="font-medium text-green-600">
-                                +{polygon.properties.priceChange}%
-                              </span>
-                            </div>
-                            <div className="flex justify-between">
-                              <span className="text-gray-600">Flood Risk:</span>
-                              <span className="font-medium text-orange-600">
-                                {polygon.properties.floodRisk}%
-                              </span>
-                            </div>
-                            {polygon.properties.population && (
-                              <div className="flex justify-between">
-                                <span className="text-gray-600">
-                                  Population:
-                                </span>
-                                <span className="font-medium">
-                                  {(
-                                    polygon.properties.population / 1000
-                                  ).toFixed(0)}
-                                  K
-                                </span>
-                              </div>
-                            )}
-                            {polygon.properties.avgPropertyValue && (
-                              <div className="flex justify-between">
-                                <span className="text-gray-600">
-                                  Avg Property Value:
-                                </span>
-                                <span className="font-medium">
-                                  {polygon.properties.avgPropertyValue}
-                                </span>
-                              </div>
-                            )}
-                          </div>
-                        </CardContent>
-                      </Card>
-                    ))}
-                  </div>
-
-                  {/* AI Insights */}
-                  {queryResult.insights && (
-                    <Card className="query-result-indicator">
-                      <CardHeader>
-                        <CardTitle className="text-lg flex items-center gap-2">
-                          <BarChart3 className="h-5 w-5" />
-                          AI Insights
-                          {queryResult?.meta?.geminiUsed && (
-                            <span className="ml-2 px-2 py-1 text-xs bg-gradient-to-r from-blue-500 to-purple-600 text-white rounded-full">
-                              Gemini AI
-                            </span>
-                          )}
-                        </CardTitle>
-                      </CardHeader>
-                      <CardContent>
-                        <ul className="space-y-2">
-                          {queryResult.insights.map((insight, index) => (
-                            <li
-                              key={index}
-                              className="text-sm text-gray-700 flex items-start gap-2"
-                            >
-                              <span className="text-blue-500 mt-1">•</span>
-                              <span>{insight}</span>
-                            </li>
-                          ))}
-                        </ul>
-                      </CardContent>
-                    </Card>
-                  )}
-
-                  {/* Evidence & Sources */}
-                  <Card>
-                    <CardHeader>
-                      <CardTitle className="text-lg">Data Sources</CardTitle>
-                    </CardHeader>
-                    <CardContent>
-                      <ul className="text-sm space-y-1 text-gray-600">
-                        {queryResult?.dataSource ? (
-                          <>
-                            <li>• {queryResult.dataSource.propertyData}</li>
-                            <li>• {queryResult.dataSource.riskData}</li>
-                            <li>• {queryResult.dataSource.boundaryData}</li>
-                          </>
-                        ) : (
-                          <>
-                            <li>
-                              •{" "}
-                              {CITY_CONFIGS[currentCity]?.dataSources
-                                .property || "Property Registry"}
-                            </li>
-                            <li>
-                              •{" "}
-                              {CITY_CONFIGS[currentCity]?.dataSources.climate ||
-                                "Climate Risk Assessment"}
-                            </li>
-                            <li>
-                              •{" "}
-                              {CITY_CONFIGS[currentCity]?.dataSources
-                                .boundaries || "Municipal Corporation GIS"}
-                            </li>
-                          </>
-                        )}
-                      </ul>
-                    </CardContent>
-                  </Card>
-                </div>
-              )
-            )}
-          </div>
-        </div>
-      )}
     </div>
   );
 }

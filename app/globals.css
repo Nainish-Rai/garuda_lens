@@ -184,19 +184,53 @@
   height: 100%;
   width: 100%;
   z-index: 1;
+  /* Dark mode map filter */
+  filter: brightness(1);
+  transition: filter 0.3s ease;
+}
+
+/* Dark mode map styling */
+.dark .leaflet-container {
+  filter: brightness(0.8) contrast(1.2) invert(1) hue-rotate(180deg);
+}
+
+/* Revert the invert for map controls and popups in dark mode */
+.dark .leaflet-control-container,
+.dark .leaflet-popup {
+  filter: invert(1) hue-rotate(180deg);
 }
 
 .leaflet-popup-content h4 {
   margin: 0 0 8px 0;
+  color: hsl(var(--foreground));
 }
 
 .leaflet-popup-content p {
   margin: 4px 0;
+  color: hsl(var(--foreground));
+}
+
+.leaflet-popup-content-wrapper {
+  background: hsl(var(--card));
+  border: 1px solid hsl(var(--border));
+}
+
+.leaflet-popup-tip {
+  background: hsl(var(--card));
+  border: 1px solid hsl(var(--border));
 }
 
 /* Ensure controls have proper z-index */
 .leaflet-control-container {
   z-index: 5;
+}
+
+/* Theme-aware control styling */
+.leaflet-control-zoom a,
+.leaflet-control-attribution {
+  background-color: hsl(var(--card)) !important;
+  color: hsl(var(--foreground)) !important;
+  border-color: hsl(var(--border)) !important;
 }
 
 /* Enhanced highlighting for map areas */

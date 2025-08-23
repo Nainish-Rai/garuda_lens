@@ -1,14 +1,14 @@
 "use client";
 
 import React, { useState } from "react";
-import { motion, AnimatePresence } from "framer-motion";
+import { motion } from "framer-motion";
 import {
   PromptInput,
   PromptInputTextarea,
   PromptInputActions,
 } from "@/components/ui/prompt-input";
 import { Button } from "@/components/ui/button";
-import { Send, Sparkles } from "lucide-react";
+import { Send } from "lucide-react";
 import { cn } from "@/lib/utils";
 
 interface LandingPageProps {
@@ -116,7 +116,7 @@ export default function LandingPage({
                 initial={{ opacity: 0, y: 20 }}
                 animate={{ opacity: 1, y: 0 }}
                 transition={{ delay: 0.8 + index * 0.1, duration: 0.5 }}
-                onClick={() => setQuery(example)}
+                onClick={() => onQuerySubmit(example)}
                 className="text-left p-4 rounded-xl bg-card  border border-border hover:bg-card/50 hover:border-border/50 transition-all duration-200 text-sm text-muted-foreground hover:text-foreground group"
               >
                 <div className="flex items-start gap-3">

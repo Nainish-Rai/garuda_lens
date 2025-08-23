@@ -1,39 +1,14 @@
 "use client";
 
-import React, { useState, useRef, useEffect } from "react";
+import React, { useState, useEffect, useCallback } from "react";
 import { motion } from "framer-motion";
-import {
-  ChatContainerRoot,
-  ChatContainerContent,
-  ChatContainerScrollAnchor,
-} from "@/components/ui/chat-container";
-import {
-  Message,
-  MessageAvatar,
-  MessageContent,
-  MessageActions,
-  MessageAction,
-} from "@/components/ui/message";
-import {
-  PromptInput,
-  PromptInputTextarea,
-  PromptInputActions,
-} from "@/components/ui/prompt-input";
-import { ScrollButton } from "@/components/ui/scroll-button";
+import { Textarea } from "@/components/ui/textarea";
 import { Button } from "@/components/ui/button";
-import { Card } from "@/components/ui/card";
-import {
-  Send,
-  Copy,
-  ThumbsUp,
-  ThumbsDown,
-  User,
-  Bot,
-  Loader2,
-} from "lucide-react";
+import { Send, Copy, ThumbsUp, ThumbsDown, Bot, Loader2 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { RealDataAPIClient } from "./QueryProcessor";
 import type { EnhancedQueryResult } from "@/lib/types";
+import { StreamingText } from "@/components/ui/streaming-text";
 
 // Utility function to generate unique IDs
 let messageIdCounter = 0;
@@ -48,6 +23,7 @@ interface ChatMessage {
   timestamp: Date;
   data?: EnhancedQueryResult;
   isLoading?: boolean;
+  isStreaming?: boolean;
 }
 
 interface ChatInterfaceProps {
@@ -64,66 +40,118 @@ export default function ChatInterface({
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [currentInput, setCurrentInput] = useState("");
   const [isProcessing, setIsProcessing] = useState(false);
-  const messagesEndRef = useRef<HTMLDivElement>(null);
+  const [hasProcessedInitialQuery, setHasProcessedInitialQuery] =
+    useState(false);
 
-  // Process initial query if provided
-  useEffect(() => {
-    if (initialQuery && messages.length === 0) {
-      handleQuerySubmit(initialQuery);
-    }
-  }, [initialQuery]);
+  const handleQuerySubmit = useCallback(
+    async (query?: string) => {
+      const inputQuery = query || currentInput.trim();
+      if (!inputQuery || isProcessing) return;
 
-  const handleQuerySubmit = async (query?: string) => {
-    const inputQuery = query || currentInput.trim();
-    if (!inputQuery || isProcessing) return;
+      const userMessage: ChatMessage = {
+        id: generateMessageId(),
+        role: "user",
+        content: inputQuery,
+        timestamp: new Date(),
+      };
 
-    const userMessage: ChatMessage = {
-      id: generateMessageId(),
-      role: "user",
-      content: inputQuery,
-      timestamp: new Date(),
-    };
+      const loadingMessage: ChatMessage = {
+        id: generateMessageId(),
+        role: "assistant",
+        content: "Analyzing your query...",
+        timestamp: new Date(),
+        isLoading: true,
+      };
 
-    const loadingMessage: ChatMessage = {
-      id: generateMessageId(),
-      role: "assistant",
-      content: "Analyzing your query...",
-      timestamp: new Date(),
-      isLoading: true,
-    };
+      setMessages((prev) => [...prev, userMessage, loadingMessage]);
+      setCurrentInput("");
+      setIsProcessing(true);
 
-    setMessages((prev) => [...prev, userMessage, loadingMessage]);
-    setCurrentInput("");
-    setIsProcessing(true);
+      try {
+        // Simulate processing stages with updates
+        const stages = [
+          "Parsing natural language query...",
+          "Searching property databases...",
+          "Analyzing climate risk data...",
+          "Generating insights...",
+        ];
 
-    try {
-      // Simulate processing stages with updates
-      const stages = [
-        "Parsing natural language query...",
-        "Searching property databases...",
-        "Analyzing climate risk data...",
-        "Generating insights...",
-      ];
+        for (let i = 0; i < stages.length; i++) {
+          await new Promise((resolve) => setTimeout(resolve, 800));
+          setMessages((prev) =>
+            prev.map((msg) =>
+              msg.id === loadingMessage.id
+                ? { ...msg, content: stages[i] }
+                : msg
+            )
+          );
+        }
 
-      for (let i = 0; i < stages.length; i++) {
-        await new Promise((resolve) => setTimeout(resolve, 800));
-        setMessages((prev) =>
-          prev.map((msg) =>
-            msg.id === loadingMessage.id ? { ...msg, content: stages[i] } : msg
-          )
-        );
-      }
+        // Get actual data from API
+        let result;
+        try {
+          result = await RealDataAPIClient.queryNaturalLanguageAPI(inputQuery);
+        } catch (apiError) {
+          console.warn("API call failed, using fallback data:", apiError);
+          // Create a fallback response for testing
+          result = {
+            polygons: [
+              {
+                id: "test-ward-1",
+                coordinates: [
+                  [
+                    [73.8567, 18.5204],
+                    [73.8667, 18.5204],
+                    [73.8667, 18.5304],
+                    [73.8567, 18.5304],
+                    [73.8567, 18.5204],
+                  ],
+                ],
+                properties: {
+                  name: "Test Ward",
+                  priceChange: 35,
+                  floodRisk: 45,
+                  area: "Test Area",
+                  population: 50000,
+                  avgPropertyValue: "₹75,00,000",
+                  ward: "Test Ward",
+                  city: "Pune",
+                },
+              },
+            ],
+            summary: {
+              totalAreas: 1,
+              avgPriceIncrease: 35,
+              avgFloodRiskIncrease: 45,
+              timeRange: "2015-2024",
+              totalPopulation: 50000,
+            },
+            insights: [
+              "✅ Chat interface is working correctly - this is demonstration data.",
+              "⚠️ Real API data unavailable - likely due to missing environment configuration.",
+              "💡 To get real data: Create a .env.local file with API keys (see API_SETUP.md).",
+              "🔍 For development: This fallback data allows you to test all UI features.",
+            ],
+            city: "Pune",
+            dataSource: {
+              propertyData: "Test Data Source",
+              riskData: "Test Risk Data",
+              boundaryData: "Test Boundary Data",
+            },
+            meta: {
+              queryProcessed: inputQuery,
+              resultsCount: 1,
+              aiProcessed: true,
+              geminiUsed: false,
+            },
+          };
+        }
 
-      // Get actual data from API
-      const result = await RealDataAPIClient.queryNaturalLanguageAPI(
-        inputQuery
-      );
-
-      // Create response with insights
-      const insights = result.insights || [];
-      const responseContent = `Based on your query, I found ${
-        result.summary?.totalAreas || 0
-      } areas that match your criteria.
+        // Create response with insights
+        const insights = result.insights || [];
+        const responseContent = `Based on your query, I found ${
+          result.summary?.totalAreas || 0
+        } areas that match your criteria.
 
 **Key Findings:**
 ${insights.map((insight) => `• ${insight}`).join("\n")}
@@ -142,40 +170,67 @@ ${
 
 The map has been updated to highlight the relevant areas. You can explore the detailed analysis in the map view.`;
 
-      const assistantMessage: ChatMessage = {
-        id: generateMessageId(),
-        role: "assistant",
-        content: responseContent,
-        timestamp: new Date(),
-        data: result,
-      };
+        const assistantMessage: ChatMessage = {
+          id: generateMessageId(),
+          role: "assistant",
+          content: responseContent,
+          timestamp: new Date(),
+          data: result,
+          isStreaming: true,
+        };
 
-      setMessages((prev) =>
-        prev
-          .filter((msg) => msg.id !== loadingMessage.id)
-          .concat(assistantMessage)
-      );
+        // Replace loading message with streaming message
+        setMessages((prev) =>
+          prev
+            .filter((msg) => msg.id !== loadingMessage.id)
+            .concat(assistantMessage)
+        );
 
-      // Update map with new data
-      onMapUpdate?.(result);
-    } catch (error) {
-      console.error("Query processing failed:", error);
+        // Update map with new data
+        onMapUpdate?.(result);
+      } catch (error) {
+        console.error("Query processing failed:", error);
 
-      const errorMessage: ChatMessage = {
-        id: generateMessageId(),
-        role: "assistant",
-        content:
-          "I apologize, but I encountered an error while processing your query. Please try again with a different question or check your connection.",
-        timestamp: new Date(),
-      };
+        const errorMessage: ChatMessage = {
+          id: generateMessageId(),
+          role: "assistant",
+          content: `I apologize, but I encountered an error while processing your query: ${
+            error instanceof Error ? error.message : "Unknown error"
+          }.
 
-      setMessages((prev) =>
-        prev.filter((msg) => msg.id !== loadingMessage.id).concat(errorMessage)
-      );
+**Possible solutions:**
+• The application may need API keys configured for full functionality
+• Try a simpler query like "Show me wards in Pune with high property values"
+• Check the browser console for more detailed error information
+
+**Note:** The application should work with demo data even without API keys. If this persists, there may be a configuration issue.`,
+          timestamp: new Date(),
+        };
+
+        setMessages((prev) =>
+          prev
+            .filter((msg) => msg.id !== loadingMessage.id)
+            .concat(errorMessage)
+        );
+      }
+
+      setIsProcessing(false);
+    },
+    [currentInput, isProcessing, onMapUpdate]
+  );
+
+  // Process initial query if provided
+  useEffect(() => {
+    if (initialQuery && messages.length === 0 && !hasProcessedInitialQuery) {
+      setHasProcessedInitialQuery(true);
+      handleQuerySubmit(initialQuery);
     }
-
-    setIsProcessing(false);
-  };
+  }, [
+    initialQuery,
+    messages.length,
+    hasProcessedInitialQuery,
+    handleQuerySubmit,
+  ]);
 
   const copyToClipboard = (text: string) => {
     navigator.clipboard.writeText(text);
@@ -201,143 +256,151 @@ The map has been updated to highlight the relevant areas. You can explore the de
 
       {/* Messages Container */}
       <div className="flex-1 overflow-hidden relative">
-        <ChatContainerRoot className="h-full">
-          <ChatContainerContent className="p-4 space-y-4">
-            {messages.length === 0 ? (
+        <div className="h-full overflow-y-auto p-4 space-y-4">
+          {messages.length === 0 ? (
+            <motion.div
+              initial={{ opacity: 0, y: 20 }}
+              animate={{ opacity: 1, y: 0 }}
+              className="text-center py-12"
+            >
+              <Bot className="h-12 w-12 text-muted-foreground mx-auto mb-4" />
+              <h3 className="text-lg font-medium mb-2">Ready to help!</h3>
+              <p className="text-muted-foreground text-sm">
+                Start by asking a question about property trends or climate
+                risks.
+              </p>
+            </motion.div>
+          ) : (
+            messages.map((message, index) => (
               <motion.div
+                key={message.id}
                 initial={{ opacity: 0, y: 20 }}
                 animate={{ opacity: 1, y: 0 }}
-                className="text-center py-12"
+                transition={{ delay: index * 0.1 }}
+                className="w-full group"
               >
-                <Bot className="h-12 w-12 text-muted-foreground mx-auto mb-4" />
-                <h3 className="text-lg font-medium mb-2">Ready to help!</h3>
-                <p className="text-muted-foreground text-sm">
-                  Start by asking a question about property trends or climate
-                  risks.
-                </p>
-              </motion.div>
-            ) : (
-              messages.map((message, index) => (
-                <motion.div
-                  key={message.id}
-                  initial={{ opacity: 0, y: 20 }}
-                  animate={{ opacity: 1, y: 0 }}
-                  transition={{ delay: index * 0.1 }}
-                >
-                  <Message className="group">
-                    <MessageAvatar
-                      src={message.role === "user" ? "" : ""}
-                      alt={message.role}
-                      fallback={message.role === "user" ? "U" : "AI"}
+                <div className="flex gap-3 w-full">
+                  {/* Avatar */}
+                  <div
+                    className={cn(
+                      "h-8 w-8 rounded-full flex items-center justify-center text-sm font-medium shrink-0",
+                      message.role === "user"
+                        ? "bg-primary text-primary-foreground"
+                        : "bg-secondary text-secondary-foreground"
+                    )}
+                  >
+                    {message.role === "user" ? "U" : "AI"}
+                  </div>
+
+                  {/* Message Content */}
+                  <div className="flex-1 space-y-2">
+                    <div
                       className={cn(
-                        "h-8 w-8",
+                        "rounded-lg p-3 max-w-none break-words",
                         message.role === "user"
-                          ? "bg-primary text-primary-foreground"
-                          : "bg-secondary text-secondary-foreground"
+                          ? "bg-primary/10 text-foreground"
+                          : "bg-secondary text-foreground"
                       )}
-                    />
-
-                    <div className="flex-1 space-y-2">
-                      <MessageContent
-                        markdown={message.role === "assistant"}
-                        className={cn(
-                          "max-w-none",
-                          message.role === "user"
-                            ? "bg-primary/10 text-foreground"
-                            : "bg-secondary text-foreground"
-                        )}
-                      >
-                        {message.isLoading ? (
-                          <div className="flex items-center gap-2">
-                            <Loader2 className="h-4 w-4 animate-spin" />
-                            {message.content}
-                          </div>
-                        ) : (
-                          message.content
-                        )}
-                      </MessageContent>
-
-                      {message.role === "assistant" && !message.isLoading && (
-                        <MessageActions className="opacity-0 group-hover:opacity-100 transition-opacity">
-                          <MessageAction tooltip="Copy response">
-                            <Button
-                              variant="ghost"
-                              size="sm"
-                              onClick={() => copyToClipboard(message.content)}
-                              className="h-8 w-8 p-0"
-                            >
-                              <Copy className="h-3 w-3" />
-                            </Button>
-                          </MessageAction>
-
-                          <MessageAction tooltip="Good response">
-                            <Button
-                              variant="ghost"
-                              size="sm"
-                              className="h-8 w-8 p-0"
-                            >
-                              <ThumbsUp className="h-3 w-3" />
-                            </Button>
-                          </MessageAction>
-
-                          <MessageAction tooltip="Poor response">
-                            <Button
-                              variant="ghost"
-                              size="sm"
-                              className="h-8 w-8 p-0"
-                            >
-                              <ThumbsDown className="h-3 w-3" />
-                            </Button>
-                          </MessageAction>
-                        </MessageActions>
+                    >
+                      {message.isLoading ? (
+                        <div className="flex items-center gap-2">
+                          <Loader2 className="h-4 w-4 animate-spin" />
+                          <span>{message.content}</span>
+                        </div>
+                      ) : message.isStreaming ? (
+                        <StreamingText
+                          text={message.content}
+                          speed={3}
+                          interval={30}
+                          onComplete={() => {
+                            setMessages((prev) =>
+                              prev.map((msg) =>
+                                msg.id === message.id
+                                  ? { ...msg, isStreaming: false }
+                                  : msg
+                              )
+                            );
+                          }}
+                        />
+                      ) : message.role === "assistant" ? (
+                        <div className="prose prose-sm max-w-none dark:prose-invert">
+                          {message.content.split("\n").map((line, i) => (
+                            <p key={i} className="mb-2 last:mb-0">
+                              {line}
+                            </p>
+                          ))}
+                        </div>
+                      ) : (
+                        <div>{message.content}</div>
                       )}
                     </div>
-                  </Message>
-                </motion.div>
-              ))
-            )}
-          </ChatContainerContent>
-          <ChatContainerScrollAnchor ref={messagesEndRef} />
 
-          {/* ScrollButton positioned within the chat container */}
-          <div className="absolute right-4 bottom-4">
-            <ScrollButton className="shadow-lg" />
-          </div>
-        </ChatContainerRoot>
+                    {/* Actions for assistant messages */}
+                    {message.role === "assistant" && !message.isLoading && (
+                      <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          onClick={() => copyToClipboard(message.content)}
+                          className="h-7 w-7 p-0"
+                        >
+                          <Copy className="h-3 w-3" />
+                        </Button>
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          className="h-7 w-7 p-0"
+                        >
+                          <ThumbsUp className="h-3 w-3" />
+                        </Button>
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          className="h-7 w-7 p-0"
+                        >
+                          <ThumbsDown className="h-3 w-3" />
+                        </Button>
+                      </div>
+                    )}
+                  </div>
+                </div>
+              </motion.div>
+            ))
+          )}
+        </div>
       </div>
 
       {/* Input Section */}
       <div className="border-t border-border/50 p-4">
-        <PromptInput
-          value={currentInput}
-          onValueChange={setCurrentInput}
-          onSubmit={() => handleQuerySubmit()}
-          isLoading={isProcessing}
-          className="bg-background border-border"
-        >
-          <div className="flex items-end gap-2 p-2">
-            <div className="flex-1">
-              <PromptInputTextarea
-                placeholder="Ask about property trends, climate risks, or market analysis..."
-                className="resize-none border-none bg-transparent placeholder:text-muted-foreground/60"
-              />
-            </div>
-            <PromptInputActions>
-              <Button
-                onClick={() => handleQuerySubmit()}
-                disabled={!currentInput.trim() || isProcessing}
-                size="sm"
-                className="h-10 px-4"
-              >
-                {isProcessing ? (
-                  <Loader2 className="h-4 w-4 animate-spin" />
-                ) : (
-                  <Send className="h-4 w-4" />
-                )}
-              </Button>
-            </PromptInputActions>
+        <div className="flex items-end gap-2">
+          <div className="flex-1">
+            <Textarea
+              value={currentInput}
+              onChange={(e) => setCurrentInput(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === "Enter" && !e.shiftKey) {
+                  e.preventDefault();
+                  handleQuerySubmit();
+                }
+              }}
+              placeholder="Ask about property trends, climate risks, or market analysis..."
+              className="resize-none min-h-[44px] max-h-[120px]"
+              disabled={isProcessing}
+            />
           </div>
-        </PromptInput>
+          <Button
+            onClick={() => handleQuerySubmit()}
+            disabled={!currentInput.trim() || isProcessing}
+            size="sm"
+            className="h-11 px-4"
+          >
+            {isProcessing ? (
+              <Loader2 className="h-4 w-4 animate-spin" />
+            ) : (
+              <Send className="h-4 w-4" />
+            )}
+          </Button>
+        </div>
       </div>
     </motion.div>
   );

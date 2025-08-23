@@ -120,3 +120,23 @@
     @apply bg-background text-foreground;
   }
 }
+
+/* Leaflet Map Styles */
+.leaflet-container {
+  height: 100%;
+  width: 100%;
+  z-index: 1;
+}
+
+.leaflet-popup-content h4 {
+  margin: 0 0 8px 0;
+}
+
+.leaflet-popup-content p {
+  margin: 4px 0;
+}
+
+/* Ensure controls have proper z-index */
+.leaflet-control-container {
+  z-index: 5;
+}

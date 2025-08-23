@@ -1,4 +1,11 @@
-// Simple natural language query processor for real estate and climate data
+import {
+  CITY_CONFIGS,
+  type QueryFilters,
+  type QueryResult,
+  type EnhancedQueryResult,
+} from "@/lib/types";
+
+// Enhanced natural language query processor for real estate and climate data
 export interface QueryIntent {
   location?: string;
   priceChangeThreshold?: number;
@@ -9,6 +16,7 @@ export interface QueryIntent {
   };
   metrics: string[];
   filters: string[];
+  city?: string;
 }
 
 export interface ProcessedQuery {
@@ -20,6 +28,7 @@ export interface ProcessedQuery {
 export class QueryProcessor {
   // Keywords for different categories
   private static locationKeywords = [
+    "pune",
     "mumbai",
     "delhi",
     "bangalore",
@@ -31,6 +40,15 @@ export class QueryProcessor {
     "districts",
     "localities",
     "suburbs",
+    "wards",
+  ];
+
+  private static puneWardKeywords = [
+    "kothrud",
+    "aundh",
+    "koregaon park",
+    "shivajinagar",
+    "viman nagar",
   ];
 
   private static priceKeywords = [
@@ -75,10 +93,16 @@ export class QueryProcessor {
       filters: [],
     };
 
-    // Extract location
+    // Extract location and city
     const locationMatch = this.extractLocation(normalizedQuery);
     if (locationMatch) {
       intent.location = locationMatch;
+    }
+
+    // Extract city
+    const cityMatch = this.extractCity(normalizedQuery);
+    if (cityMatch) {
+      intent.city = cityMatch;
     }
 
     // Extract price change threshold
@@ -138,9 +162,38 @@ export class QueryProcessor {
   }
 
   private static extractLocation(query: string): string | undefined {
+    // First check for specific ward names in Pune
+    for (const ward of this.puneWardKeywords) {
+      if (query.includes(ward)) {
+        return ward
+          .split(" ")
+          .map((w) => w.charAt(0).toUpperCase() + w.slice(1))
+          .join(" ");
+      }
+    }
+
+    // Then check for general location keywords
     for (const location of this.locationKeywords) {
       if (query.includes(location)) {
         return location.charAt(0).toUpperCase() + location.slice(1);
+      }
+    }
+    return undefined;
+  }
+
+  private static extractCity(query: string): string | undefined {
+    const cities = [
+      "pune",
+      "mumbai",
+      "delhi",
+      "bangalore",
+      "chennai",
+      "kolkata",
+      "hyderabad",
+    ];
+    for (const city of cities) {
+      if (query.includes(city)) {
+        return city.charAt(0).toUpperCase() + city.slice(1);
       }
     }
     return undefined;
@@ -180,11 +233,17 @@ export class QueryProcessor {
   private static generateNarrative(intent: QueryIntent): string {
     let narrative = "Analyzing ";
 
-    if (intent.location) {
-      narrative += `${intent.location} `;
+    if (intent.city) {
+      narrative += `${intent.city} `;
     }
 
-    narrative += "areas where ";
+    if (intent.location && intent.location !== intent.city) {
+      narrative += `${intent.location} `;
+    } else if (!intent.city) {
+      narrative += "areas ";
+    }
+
+    narrative += "where ";
 
     const conditions = [];
 
@@ -229,74 +288,211 @@ export class QueryProcessor {
   }
 }
 
-// Mock data generator for demonstration
+// Enhanced data generator with Pune-specific data
 export class MockDataGenerator {
-  static generateResults(intent: QueryIntent): {
-    polygons: Array<{
-      id: string;
-      coordinates: number[][][];
-      properties: {
-        name: string;
-        priceChange: number;
-        floodRisk: number;
-        area: string;
-        population?: number;
-        avgPropertyValue?: string;
+  static async queryNaturalLanguageAPI(
+    query: string
+  ): Promise<EnhancedQueryResult> {
+    try {
+      const response = await fetch("/api/query", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({ query }),
+      });
+
+      if (!response.ok) {
+        throw new Error("API request failed");
+      }
+
+      const data = await response.json();
+
+      // Convert API response to map-compatible format
+      return {
+        polygons: data.results.map((result: QueryResult, index: number) => ({
+          id: `${result.ward.toLowerCase().replace(/\s+/g, "-")}-${index}`,
+          coordinates: [this.generatePolygonCoordinates(result.coordinates)],
+          properties: {
+            name: result.ward,
+            priceChange: result.priceChangePercent,
+            floodRisk: this.getRiskScoreFromLevel(result.currentRiskLevel),
+            area: result.ward,
+            population: result.population,
+            avgPropertyValue: result.avgPropertyValue,
+            ward: result.ward,
+            city: data.city,
+          },
+        })),
+        summary: {
+          totalAreas: data.results.length,
+          avgPriceIncrease:
+            data.results.reduce(
+              (sum: number, r: QueryResult) => sum + r.priceChangePercent,
+              0
+            ) / (data.results.length || 1),
+          avgFloodRiskIncrease:
+            data.results.reduce(
+              (sum: number, r: QueryResult) =>
+                sum + this.getRiskScoreFromLevel(r.currentRiskLevel),
+              0
+            ) / (data.results.length || 1),
+          timeRange: data.filters.timeRange || "2015-2023",
+          totalPopulation: data.results.reduce(
+            (sum: number, r: QueryResult) => sum + (r.population || 0),
+            0
+          ),
+        },
+        insights: data.insights || [],
+        city: data.city,
+        dataSource: {
+          propertyData: "NHB RESIDEX",
+          riskData: "CWC Flood Hazard Maps + PMC GIS",
+          boundaryData: "Pune Municipal Corporation GIS",
+        },
       };
-    }>;
-    summary: {
-      totalAreas: number;
-      avgPriceIncrease: number;
-      avgFloodRiskIncrease: number;
-      timeRange: string;
-      totalPopulation?: number;
-    };
-    insights: string[];
-  } {
-    const areas = [
-      {
-        name: "Bandra West",
-        coordinates: [
-          [72.8077, 19.046],
-          [72.8277, 19.046],
-          [72.8277, 19.066],
-          [72.8077, 19.066],
-          [72.8077, 19.046],
-        ],
-        priceChange: 35,
-        floodRisk: 45,
-        population: 85000,
-        avgPropertyValue: "₹12.5 Cr",
-      },
-      {
-        name: "Khar West",
-        coordinates: [
-          [72.8477, 19.076],
-          [72.8677, 19.076],
-          [72.8677, 19.096],
-          [72.8477, 19.096],
-          [72.8477, 19.076],
-        ],
-        priceChange: 42,
-        floodRisk: 38,
-        population: 72000,
-        avgPropertyValue: "₹8.3 Cr",
-      },
-      {
-        name: "Juhu",
-        coordinates: [
-          [72.8177, 19.096],
-          [72.8377, 19.096],
-          [72.8377, 19.116],
-          [72.8177, 19.116],
-          [72.8177, 19.096],
-        ],
-        priceChange: 38,
-        floodRisk: 52,
-        population: 65000,
-        avgPropertyValue: "₹15.2 Cr",
-      },
+    } catch (error) {
+      console.error("Failed to query API, falling back to mock data:", error);
+      return this.generateResults(intent);
+    }
+  }
+
+  private static generatePolygonCoordinates(
+    center: [number, number]
+  ): number[][] {
+    const [lat, lng] = center;
+    const offset = 0.01; // Roughly 1km at this latitude
+
+    return [
+      [lng - offset, lat - offset],
+      [lng + offset, lat - offset],
+      [lng + offset, lat + offset],
+      [lng - offset, lat + offset],
+      [lng - offset, lat - offset],
     ];
+  }
+
+  private static getRiskScoreFromLevel(level: string): number {
+    switch (level) {
+      case "Very High":
+        return 85;
+      case "High":
+        return 70;
+      case "Moderate":
+        return 45;
+      case "Low":
+        return 25;
+      default:
+        return 30;
+    }
+  }
+
+  static generateResults(intent: QueryIntent): EnhancedQueryResult {
+    // Use Pune data if city is specified as Pune, otherwise fallback to Mumbai data
+    const areas =
+      intent.city?.toLowerCase() === "pune"
+        ? [
+            {
+              name: "Kothrud",
+              coordinates: [
+                [73.8027, 18.5024],
+                [73.8127, 18.5024],
+                [73.8127, 18.5124],
+                [73.8027, 18.5124],
+                [73.8027, 18.5024],
+              ],
+              priceChange: 38,
+              floodRisk: 68,
+              population: 180000,
+              avgPropertyValue: "₹85 Lakh",
+            },
+            {
+              name: "Aundh",
+              coordinates: [
+                [73.802, 18.5529],
+                [73.812, 18.5529],
+                [73.812, 18.5629],
+                [73.802, 18.5629],
+                [73.802, 18.5529],
+              ],
+              priceChange: 42,
+              floodRisk: 61,
+              population: 220000,
+              avgPropertyValue: "₹1.2 Cr",
+            },
+            {
+              name: "Koregaon Park",
+              coordinates: [
+                [73.893, 18.5312],
+                [73.903, 18.5312],
+                [73.903, 18.5412],
+                [73.893, 18.5412],
+                [73.893, 18.5312],
+              ],
+              priceChange: 48,
+              floodRisk: 58,
+              population: 95000,
+              avgPropertyValue: "₹1.8 Cr",
+            },
+            {
+              name: "Viman Nagar",
+              coordinates: [
+                [73.9093, 18.5629],
+                [73.9193, 18.5629],
+                [73.9193, 18.5729],
+                [73.9093, 18.5729],
+                [73.9093, 18.5629],
+              ],
+              priceChange: 43,
+              floodRisk: 75,
+              population: 125000,
+              avgPropertyValue: "₹95 Lakh",
+            },
+          ]
+        : [
+            {
+              name: "Bandra West",
+              coordinates: [
+                [72.8077, 19.046],
+                [72.8277, 19.046],
+                [72.8277, 19.066],
+                [72.8077, 19.066],
+                [72.8077, 19.046],
+              ],
+              priceChange: 35,
+              floodRisk: 45,
+              population: 85000,
+              avgPropertyValue: "₹12.5 Cr",
+            },
+            {
+              name: "Khar West",
+              coordinates: [
+                [72.8477, 19.076],
+                [72.8677, 19.076],
+                [72.8677, 19.096],
+                [72.8477, 19.096],
+                [72.8477, 19.076],
+              ],
+              priceChange: 42,
+              floodRisk: 38,
+              population: 72000,
+              avgPropertyValue: "₹8.3 Cr",
+            },
+            {
+              name: "Juhu",
+              coordinates: [
+                [72.8177, 19.096],
+                [72.8377, 19.096],
+                [72.8377, 19.116],
+                [72.8177, 19.116],
+                [72.8177, 19.096],
+              ],
+              priceChange: 38,
+              floodRisk: 52,
+              population: 65000,
+              avgPropertyValue: "₹15.2 Cr",
+            },
+          ];
 
     // Filter based on intent
     const filteredAreas = areas.filter((area) => {
@@ -326,16 +522,18 @@ export class MockDataGenerator {
           population: area.population,
           avgPropertyValue: area.avgPropertyValue,
           area: area.name.split(" ")[0],
+          ward: area.name,
+          city: intent.city || "Mumbai",
         },
       })),
       summary: {
         totalAreas: filteredAreas.length,
         avgPriceIncrease:
           filteredAreas.reduce((sum, area) => sum + area.priceChange, 0) /
-          filteredAreas.length,
+          (filteredAreas.length || 1),
         avgFloodRiskIncrease:
           filteredAreas.reduce((sum, area) => sum + area.floodRisk, 0) /
-          filteredAreas.length,
+          (filteredAreas.length || 1),
         timeRange: intent.timeFrame
           ? `${intent.timeFrame.start} - ${intent.timeFrame.end}`
           : "2015 - 2024",
@@ -345,16 +543,33 @@ export class MockDataGenerator {
         ),
       },
       insights: [
-        `Found ${filteredAreas.length} neighborhoods matching your criteria`,
+        `Found ${
+          filteredAreas.length
+        } neighborhoods matching your criteria in ${intent.city || "Mumbai"}`,
         `Average property appreciation: ${(
           filteredAreas.reduce((sum, area) => sum + area.priceChange, 0) /
-          filteredAreas.length
+          (filteredAreas.length || 1)
         ).toFixed(1)}%`,
         `These areas show correlation between property value growth and increased flood risk`,
         `Total population affected: ${(
           filteredAreas.reduce((sum, area) => sum + area.population, 0) / 1000
         ).toFixed(0)}K residents`,
       ],
+      city: intent.city || "Mumbai",
+      dataSource: {
+        propertyData:
+          intent.city?.toLowerCase() === "pune"
+            ? "NHB RESIDEX"
+            : "Mumbai Property Registry",
+        riskData:
+          intent.city?.toLowerCase() === "pune"
+            ? "CWC Flood Hazard Maps + PMC GIS"
+            : "BMC Flood Risk Assessment",
+        boundaryData:
+          intent.city?.toLowerCase() === "pune"
+            ? "Pune Municipal Corporation GIS"
+            : "Mumbai Municipal Corporation GIS",
+      },
     };
   }
 }

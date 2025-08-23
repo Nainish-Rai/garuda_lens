@@ -16,6 +16,7 @@ import {
   BarChart3,
 } from "lucide-react";
 import { QueryProcessor, MockDataGenerator } from "./QueryProcessor";
+import { CITY_CONFIGS, type EnhancedQueryResult } from "@/lib/types";
 import "leaflet/dist/leaflet.css";
 
 interface ViewState {
@@ -23,28 +24,8 @@ interface ViewState {
   zoom: number;
 }
 
-interface QueryResult {
-  polygons: Array<{
-    id: string;
-    coordinates: number[][][];
-    properties: {
-      name: string;
-      priceChange: number;
-      floodRisk: number;
-      area: string;
-      population?: number;
-      avgPropertyValue?: string;
-    };
-  }>;
-  summary: {
-    totalAreas: number;
-    avgPriceIncrease: number;
-    avgFloodRiskIncrease: number;
-    timeRange: string;
-    totalPopulation?: number;
-  };
-  insights?: string[];
-}
+// Use the enhanced result type from types.ts
+type QueryResult = EnhancedQueryResult;
 
 // Component to handle map bounds fitting
 function FitBounds({ bounds }: { bounds?: LatLngBounds }) {
@@ -61,9 +42,13 @@ function FitBounds({ bounds }: { bounds?: LatLngBounds }) {
 
 export default function MapInterface() {
   const mapRef = useRef<LeafletMap>(null);
-  const [viewState] = useState<ViewState>({
-    center: [19.076, 72.8777], // [lat, lng] - Mumbai coordinates
-    zoom: 10,
+  const [currentCity, setCurrentCity] = useState<string>("pune");
+  const [viewState, setViewState] = useState<ViewState>(() => {
+    const cityConfig = CITY_CONFIGS[currentCity];
+    return {
+      center: cityConfig.center,
+      zoom: cityConfig.zoom,
+    };
   });
   const [mapBounds, setMapBounds] = useState<LatLngBounds | undefined>();
 
@@ -79,51 +64,127 @@ export default function MapInterface() {
     boundaries: true,
   });
 
-  // Sample data for demonstration
-  const samplePolygons = [
-    {
-      type: "Feature" as const,
-      geometry: {
-        type: "Polygon" as const,
-        coordinates: [
-          [
-            [72.8077, 19.046],
-            [72.8277, 19.046],
-            [72.8277, 19.066],
-            [72.8077, 19.066],
-            [72.8077, 19.046],
-          ],
-        ],
-      },
-      properties: {
-        name: "Bandra West",
-        priceChange: 35,
-        floodRisk: 45,
-        area: "Bandra",
-      },
-    },
-    {
-      type: "Feature" as const,
-      geometry: {
-        type: "Polygon" as const,
-        coordinates: [
-          [
-            [72.8477, 19.076],
-            [72.8677, 19.076],
-            [72.8677, 19.096],
-            [72.8477, 19.096],
-            [72.8477, 19.076],
-          ],
-        ],
-      },
-      properties: {
-        name: "Khar West",
-        priceChange: 42,
-        floodRisk: 38,
-        area: "Khar",
-      },
-    },
-  ];
+  // Update view when city changes
+  const handleCityChange = (newCity: string) => {
+    if (CITY_CONFIGS[newCity]) {
+      setCurrentCity(newCity);
+      const cityConfig = CITY_CONFIGS[newCity];
+      setViewState({
+        center: cityConfig.center,
+        zoom: cityConfig.zoom,
+      });
+      // Clear previous results when switching cities
+      setQueryResult(null);
+      setShowSidePanel(false);
+      setQuery("");
+    }
+  };
+
+  // Generate sample data based on current city
+  const getSampleData = () => {
+    if (currentCity === "pune") {
+      return [
+        {
+          type: "Feature" as const,
+          geometry: {
+            type: "Polygon" as const,
+            coordinates: [
+              [
+                [73.8027, 18.5024],
+                [73.8127, 18.5024],
+                [73.8127, 18.5124],
+                [73.8027, 18.5124],
+                [73.8027, 18.5024],
+              ],
+            ],
+          },
+          properties: {
+            name: "Kothrud",
+            priceChange: 38,
+            floodRisk: 68,
+            area: "Kothrud",
+            ward: "Kothrud",
+            city: "Pune",
+          },
+        },
+        {
+          type: "Feature" as const,
+          geometry: {
+            type: "Polygon" as const,
+            coordinates: [
+              [
+                [73.802, 18.5529],
+                [73.812, 18.5529],
+                [73.812, 18.5629],
+                [73.802, 18.5629],
+                [73.802, 18.5529],
+              ],
+            ],
+          },
+          properties: {
+            name: "Aundh",
+            priceChange: 42,
+            floodRisk: 61,
+            area: "Aundh",
+            ward: "Aundh",
+            city: "Pune",
+          },
+        },
+      ];
+    } else {
+      // Mumbai data
+      return [
+        {
+          type: "Feature" as const,
+          geometry: {
+            type: "Polygon" as const,
+            coordinates: [
+              [
+                [72.8077, 19.046],
+                [72.8277, 19.046],
+                [72.8277, 19.066],
+                [72.8077, 19.066],
+                [72.8077, 19.046],
+              ],
+            ],
+          },
+          properties: {
+            name: "Bandra West",
+            priceChange: 35,
+            floodRisk: 45,
+            area: "Bandra",
+            ward: "Bandra West",
+            city: "Mumbai",
+          },
+        },
+        {
+          type: "Feature" as const,
+          geometry: {
+            type: "Polygon" as const,
+            coordinates: [
+              [
+                [72.8477, 19.076],
+                [72.8677, 19.076],
+                [72.8677, 19.096],
+                [72.8477, 19.096],
+                [72.8477, 19.076],
+              ],
+            ],
+          },
+          properties: {
+            name: "Khar West",
+            priceChange: 42,
+            floodRisk: 38,
+            area: "Khar",
+            ward: "Khar West",
+            city: "Mumbai",
+          },
+        },
+      ];
+    }
+  };
+
+  const samplePolygons = getSampleData();
 
   // Generate map data from query results or use sample data
   const mapData = queryResult
@@ -150,56 +211,69 @@ export default function MapInterface() {
     setShowSidePanel(true);
     setProcessingStage("Parsing natural language query...");
 
-    // Process the natural language query
-    await new Promise((resolve) => setTimeout(resolve, 800));
-    const processedQuery = QueryProcessor.processQuery(query);
+    try {
+      // Add current city context to query if not specified
+      const enhancedQuery = query
+        .toLowerCase()
+        .includes(currentCity.toLowerCase())
+        ? query
+        : `${query} in ${currentCity}`;
 
-    setProcessingStage("Searching property databases...");
-    await new Promise((resolve) => setTimeout(resolve, 700));
+      // Process the natural language query
+      await new Promise((resolve) => setTimeout(resolve, 800));
+      const processedQuery = QueryProcessor.processQuery(enhancedQuery);
 
-    setProcessingStage("Analyzing climate risk data...");
-    await new Promise((resolve) => setTimeout(resolve, 600));
+      setProcessingStage("Searching property databases...");
+      await new Promise((resolve) => setTimeout(resolve, 700));
 
-    setProcessingStage("Generating insights...");
-    await new Promise((resolve) => setTimeout(resolve, 400));
+      setProcessingStage("Analyzing climate risk data...");
+      await new Promise((resolve) => setTimeout(resolve, 600));
 
-    // Generate mock results based on processed intent
-    const mockResults = MockDataGenerator.generateResults(
-      processedQuery.intent
-    );
+      setProcessingStage("Generating insights...");
+      await new Promise((resolve) => setTimeout(resolve, 400));
 
-    const result: QueryResult = {
-      polygons: mockResults.polygons,
-      summary: mockResults.summary,
-      insights: mockResults.insights,
-    };
+      // Try to use the real API first, then fallback to mock data
+      let result: QueryResult;
+      try {
+        result = await MockDataGenerator.queryNaturalLanguageAPI(enhancedQuery);
+      } catch (error) {
+        console.log("API failed, using mock data:", error);
+        // Fallback to mock data with city context
+        processedQuery.intent.city = currentCity;
+        result = MockDataGenerator.generateResults(processedQuery.intent);
+      }
 
-    setQueryResult(result);
-    setIsQuerying(false);
-    setProcessingStage("");
+      setQueryResult(result);
+      setIsQuerying(false);
+      setProcessingStage("");
 
-    // Zoom to fit the results
-    if (result.polygons.length > 0) {
-      // Calculate bounds from polygon coordinates
-      let minLng = Infinity,
-        minLat = Infinity,
-        maxLng = -Infinity,
-        maxLat = -Infinity;
+      // Zoom to fit the results
+      if (result.polygons.length > 0) {
+        // Calculate bounds from polygon coordinates
+        let minLng = Infinity,
+          minLat = Infinity,
+          maxLng = -Infinity,
+          maxLat = -Infinity;
 
-      result.polygons.forEach((polygon) => {
-        polygon.coordinates[0].forEach((coord) => {
-          const [lng, lat] = coord;
-          minLng = Math.min(minLng, lng);
-          maxLng = Math.max(maxLng, lng);
-          minLat = Math.min(minLat, lat);
-          maxLat = Math.max(maxLat, lat);
+        result.polygons.forEach((polygon) => {
+          polygon.coordinates[0].forEach((coord) => {
+            const [lng, lat] = coord;
+            minLng = Math.min(minLng, lng);
+            maxLng = Math.max(maxLng, lng);
+            minLat = Math.min(minLat, lat);
+            maxLat = Math.max(maxLat, lat);
+          });
         });
-      });
 
-      const bounds = new LatLngBounds([minLat, minLng], [maxLat, maxLng]);
-      setMapBounds(bounds);
+        const bounds = new LatLngBounds([minLat, minLng], [maxLat, maxLng]);
+        setMapBounds(bounds);
+      }
+    } catch (error) {
+      console.error("Query processing failed:", error);
+      setIsQuerying(false);
+      setProcessingStage("");
     }
-  }, [query]);
+  }, [query, currentCity]);
 
   const handleTimeChange = useCallback((newTime: number[]) => {
     setTimeRange(newTime);
@@ -287,24 +361,24 @@ export default function MapInterface() {
   return (
     <div className="relative w-full h-screen overflow-hidden">
       {/* Natural Language Query Bar */}
-      <div className="absolute top-4 left-1/2 transform -translate-x-1/2 z-10 w-full max-w-2xl px-4">
-        <Card className="bg-white/95 backdrop-blur-sm shadow-lg border-0">
-          <CardContent className="p-4">
+      <div className="absolute top-4 left-1/2 transform -translate-x-1/2 z-10 w-full max-w-2xl px-0">
+        <Card className="bg-white/80 backdrop-blur-sm rounded-full border-0">
+          <CardContent className="">
             <div className="flex gap-2">
               <div className="relative flex-1">
                 <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-gray-400" />
                 <Input
-                  placeholder="Show me neighborhoods in Mumbai where property values rose >30% and flood risk increased since 2015..."
+                  placeholder={`Show me wards in ${currentCity} where property values rose >30% and flood risk increased since 2015...`}
                   value={query}
                   onChange={(e) => setQuery(e.target.value)}
-                  className="pl-10 pr-4 py-2 h-12 text-sm"
+                  className="pl-10 pr-4 rounded-full h-12 text-sm"
                   onKeyPress={(e) => e.key === "Enter" && handleQuery()}
                 />
               </div>
               <Button
                 onClick={handleQuery}
                 disabled={isQuerying || !query.trim()}
-                className="h-12 px-6"
+                className="h-12 px-6 rounded-full"
               >
                 {isQuerying ? "Analyzing..." : "Search"}
               </Button>
@@ -313,10 +387,25 @@ export default function MapInterface() {
         </Card>
       </div>
 
-      {/* Layer Toggle Controls */}
+      {/* City Selector & Layer Controls */}
       <div className="absolute top-4 left-4 z-10">
         <Card className="bg-white/95 backdrop-blur-sm shadow-lg border-0">
           <CardContent className="p-3">
+            {/* City Selector */}
+            <div className="mb-3 pb-3 border-b border-gray-200">
+              <label className="block text-sm font-medium mb-2">City</label>
+              <select
+                value={currentCity}
+                onChange={(e) => handleCityChange(e.target.value)}
+                className="w-full p-2 text-sm border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-blue-500"
+              >
+                {Object.entries(CITY_CONFIGS).map(([key, config]) => (
+                  <option key={key} value={key}>
+                    {config.name}
+                  </option>
+                ))}
+              </select>
+            </div>
             <div className="space-y-2">
               <label className="flex items-center space-x-2 text-sm">
                 <input
@@ -624,10 +713,31 @@ export default function MapInterface() {
                     </CardHeader>
                     <CardContent>
                       <ul className="text-sm space-y-1 text-gray-600">
-                        <li>• Mumbai Property Registry (2015-2024)</li>
-                        <li>• BMC Flood Risk Assessment</li>
-                        <li>• Maharashtra Climate Database</li>
-                        <li>• Real Estate Market Analysis</li>
+                        {queryResult?.dataSource ? (
+                          <>
+                            <li>• {queryResult.dataSource.propertyData}</li>
+                            <li>• {queryResult.dataSource.riskData}</li>
+                            <li>• {queryResult.dataSource.boundaryData}</li>
+                          </>
+                        ) : (
+                          <>
+                            <li>
+                              •{" "}
+                              {CITY_CONFIGS[currentCity]?.dataSources
+                                .property || "Property Registry"}
+                            </li>
+                            <li>
+                              •{" "}
+                              {CITY_CONFIGS[currentCity]?.dataSources.climate ||
+                                "Climate Risk Assessment"}
+                            </li>
+                            <li>
+                              •{" "}
+                              {CITY_CONFIGS[currentCity]?.dataSources
+                                .boundaries || "Municipal Corporation GIS"}
+                            </li>
+                          </>
+                        )}
                       </ul>
                     </CardContent>
                   </Card>

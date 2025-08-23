@@ -200,7 +200,7 @@ export const CITY_CONFIGS: Record<string, CityConfig> = {
 export interface APIResponse<T> {
   data?: T;
   error?: string;
-  meta?: Record<string, any>;
+  meta?: Record<string, unknown>;
 }
 
 export interface PriceAPIResponse extends APIResponse<PriceData | PriceData[]> {

@@ -1,9 +1,4 @@
-import {
-  CITY_CONFIGS,
-  type QueryFilters,
-  type QueryResult,
-  type EnhancedQueryResult,
-} from "@/lib/types";
+import { type QueryResult, type EnhancedQueryResult } from "@/lib/types";
 
 // Enhanced natural language query processor for real estate and climate data
 export interface QueryIntent {
@@ -288,8 +283,8 @@ export class QueryProcessor {
   }
 }
 
-// Enhanced data generator with Pune-specific data
-export class MockDataGenerator {
+// Real data API client for property and climate data
+export class RealDataAPIClient {
   static async queryNaturalLanguageAPI(
     query: string
   ): Promise<EnhancedQueryResult> {
@@ -352,7 +347,7 @@ export class MockDataGenerator {
                 sum + this.getRiskScoreFromLevel(r.currentRiskLevel),
               0
             ) / (data.results.length || 1),
-          timeRange: data.filters.timeRange || "2015-2023",
+          timeRange: data.filters.timeRange || "2015-2024",
           totalPopulation: data.results.reduce(
             (sum: number, r: QueryResult) => sum + (r.population || 0),
             0
@@ -361,9 +356,9 @@ export class MockDataGenerator {
         insights: data.insights || [],
         city: data.city,
         dataSource: {
-          propertyData: "NHB RESIDEX",
-          riskData: "CWC Flood Hazard Maps + PMC GIS",
-          boundaryData: "Pune Municipal Corporation GIS",
+          propertyData: data.sources?.[0] || "Real-time Property Data",
+          riskData: data.sources?.[1] || "Climate Risk Assessment",
+          boundaryData: data.sources?.[2] || "Municipal GIS Systems",
         },
         meta: data.meta || {
           queryProcessed: query,
@@ -373,8 +368,12 @@ export class MockDataGenerator {
         },
       };
     } catch (error) {
-      console.error("Failed to query API, falling back to mock data:", error);
-      return this.generateResults(intent);
+      console.error("Failed to query real APIs:", error);
+      throw new Error(
+        `Failed to fetch real data: ${
+          error instanceof Error ? error.message : "Unknown error"
+        }`
+      );
     }
   }
 
@@ -406,191 +405,5 @@ export class MockDataGenerator {
       default:
         return 30;
     }
-  }
-
-  static generateResults(intent: QueryIntent): EnhancedQueryResult {
-    // Use Pune data if city is specified as Pune, otherwise fallback to Mumbai data
-    const areas =
-      intent.city?.toLowerCase() === "pune"
-        ? [
-            {
-              name: "Kothrud",
-              coordinates: [
-                [73.8027, 18.5024],
-                [73.8127, 18.5024],
-                [73.8127, 18.5124],
-                [73.8027, 18.5124],
-                [73.8027, 18.5024],
-              ],
-              priceChange: 38,
-              floodRisk: 68,
-              population: 180000,
-              avgPropertyValue: "₹85 Lakh",
-            },
-            {
-              name: "Aundh",
-              coordinates: [
-                [73.802, 18.5529],
-                [73.812, 18.5529],
-                [73.812, 18.5629],
-                [73.802, 18.5629],
-                [73.802, 18.5529],
-              ],
-              priceChange: 42,
-              floodRisk: 61,
-              population: 220000,
-              avgPropertyValue: "₹1.2 Cr",
-            },
-            {
-              name: "Koregaon Park",
-              coordinates: [
-                [73.893, 18.5312],
-                [73.903, 18.5312],
-                [73.903, 18.5412],
-                [73.893, 18.5412],
-                [73.893, 18.5312],
-              ],
-              priceChange: 48,
-              floodRisk: 58,
-              population: 95000,
-              avgPropertyValue: "₹1.8 Cr",
-            },
-            {
-              name: "Viman Nagar",
-              coordinates: [
-                [73.9093, 18.5629],
-                [73.9193, 18.5629],
-                [73.9193, 18.5729],
-                [73.9093, 18.5729],
-                [73.9093, 18.5629],
-              ],
-              priceChange: 43,
-              floodRisk: 75,
-              population: 125000,
-              avgPropertyValue: "₹95 Lakh",
-            },
-          ]
-        : [
-            {
-              name: "Bandra West",
-              coordinates: [
-                [72.8077, 19.046],
-                [72.8277, 19.046],
-                [72.8277, 19.066],
-                [72.8077, 19.066],
-                [72.8077, 19.046],
-              ],
-              priceChange: 35,
-              floodRisk: 45,
-              population: 85000,
-              avgPropertyValue: "₹12.5 Cr",
-            },
-            {
-              name: "Khar West",
-              coordinates: [
-                [72.8477, 19.076],
-                [72.8677, 19.076],
-                [72.8677, 19.096],
-                [72.8477, 19.096],
-                [72.8477, 19.076],
-              ],
-              priceChange: 42,
-              floodRisk: 38,
-              population: 72000,
-              avgPropertyValue: "₹8.3 Cr",
-            },
-            {
-              name: "Juhu",
-              coordinates: [
-                [72.8177, 19.096],
-                [72.8377, 19.096],
-                [72.8377, 19.116],
-                [72.8177, 19.116],
-                [72.8177, 19.096],
-              ],
-              priceChange: 38,
-              floodRisk: 52,
-              population: 65000,
-              avgPropertyValue: "₹15.2 Cr",
-            },
-          ];
-
-    // Filter based on intent
-    const filteredAreas = areas.filter((area) => {
-      if (
-        intent.priceChangeThreshold &&
-        area.priceChange < intent.priceChangeThreshold
-      ) {
-        return false;
-      }
-      if (
-        intent.riskChangeThreshold &&
-        area.floodRisk < intent.riskChangeThreshold
-      ) {
-        return false;
-      }
-      return true;
-    });
-
-    return {
-      polygons: filteredAreas.map((area, index) => ({
-        id: `area-${index}`,
-        coordinates: [area.coordinates],
-        properties: {
-          name: area.name,
-          priceChange: area.priceChange,
-          floodRisk: area.floodRisk,
-          population: area.population,
-          avgPropertyValue: area.avgPropertyValue,
-          area: area.name.split(" ")[0],
-          ward: area.name,
-          city: intent.city || "Mumbai",
-        },
-      })),
-      summary: {
-        totalAreas: filteredAreas.length,
-        avgPriceIncrease:
-          filteredAreas.reduce((sum, area) => sum + area.priceChange, 0) /
-          (filteredAreas.length || 1),
-        avgFloodRiskIncrease:
-          filteredAreas.reduce((sum, area) => sum + area.floodRisk, 0) /
-          (filteredAreas.length || 1),
-        timeRange: intent.timeFrame
-          ? `${intent.timeFrame.start} - ${intent.timeFrame.end}`
-          : "2015 - 2024",
-        totalPopulation: filteredAreas.reduce(
-          (sum, area) => sum + area.population,
-          0
-        ),
-      },
-      insights: [
-        `Found ${
-          filteredAreas.length
-        } neighborhoods matching your criteria in ${intent.city || "Mumbai"}`,
-        `Average property appreciation: ${(
-          filteredAreas.reduce((sum, area) => sum + area.priceChange, 0) /
-          (filteredAreas.length || 1)
-        ).toFixed(1)}%`,
-        `These areas show correlation between property value growth and increased flood risk`,
-        `Total population affected: ${(
-          filteredAreas.reduce((sum, area) => sum + area.population, 0) / 1000
-        ).toFixed(0)}K residents`,
-      ],
-      city: intent.city || "Mumbai",
-      dataSource: {
-        propertyData:
-          intent.city?.toLowerCase() === "pune"
-            ? "NHB RESIDEX"
-            : "Mumbai Property Registry",
-        riskData:
-          intent.city?.toLowerCase() === "pune"
-            ? "CWC Flood Hazard Maps + PMC GIS"
-            : "BMC Flood Risk Assessment",
-        boundaryData:
-          intent.city?.toLowerCase() === "pune"
-            ? "Pune Municipal Corporation GIS"
-            : "Mumbai Municipal Corporation GIS",
-      },
-    };
   }
 }

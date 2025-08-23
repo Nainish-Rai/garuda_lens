@@ -1,17 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-
-// Mock NHB RESIDEX data for Pune (2015-2023)
-const PUNE_PRICE_DATA = [
-  { year: 2015, priceIndex: 100.0, quarter: "Q4" },
-  { year: 2016, priceIndex: 103.2, quarter: "Q4" },
-  { year: 2017, priceIndex: 107.8, quarter: "Q4" },
-  { year: 2018, priceIndex: 110.5, quarter: "Q4" },
-  { year: 2019, priceIndex: 114.2, quarter: "Q4" },
-  { year: 2020, priceIndex: 112.3, quarter: "Q4" },
-  { year: 2021, priceIndex: 115.8, quarter: "Q4" },
-  { year: 2022, priceIndex: 121.4, quarter: "Q4" },
-  { year: 2023, priceIndex: 128.6, quarter: "Q4" },
-];
+import { fetchPriceData } from "@/lib/data-fetchers";
 
 export async function GET(request: NextRequest) {
   const { searchParams } = new URL(request.url);
@@ -20,70 +8,99 @@ export async function GET(request: NextRequest) {
   const quarter = searchParams.get("quarter") || "Q4";
 
   // Validate city parameter
-  if (!city || city.toLowerCase() !== "pune") {
+  if (!city) {
     return NextResponse.json(
       {
-        error: "Invalid city parameter. Currently only Pune is supported.",
-        supportedCities: ["Pune"],
+        error: "City parameter is required.",
+        supportedCities: ["Pune", "Mumbai", "Delhi", "Bangalore"],
       },
       { status: 400 }
     );
   }
 
-  // If no year specified, return all available data
-  if (!year) {
+  try {
+    // Fetch real price data
+    const priceData = await fetchPriceData(
+      city,
+      year ? parseInt(year) : undefined
+    );
+
+    if (!priceData || priceData.length === 0) {
+      return NextResponse.json(
+        {
+          error: `No data available for ${city}${
+            year ? ` in year ${year}` : ""
+          }`,
+          supportedCities: ["Pune", "Mumbai", "Delhi", "Bangalore"],
+        },
+        { status: 404 }
+      );
+    }
+
+    // If no year specified, return all available data
+    if (!year) {
+      return NextResponse.json({
+        city: city.charAt(0).toUpperCase() + city.slice(1),
+        data: priceData,
+        meta: {
+          description: `Property price index for ${
+            city.charAt(0).toUpperCase() + city.slice(1)
+          }`,
+          baseYear: 2015,
+          lastUpdated: new Date().toISOString().split("T")[0],
+          dataSource: "Real-time property data aggregation",
+        },
+      });
+    }
+
+    // Find data for specific year
+    const yearNum = parseInt(year);
+    const yearData = priceData.find((entry) => entry.year === yearNum);
+
+    if (!yearData) {
+      return NextResponse.json(
+        {
+          error: `No data available for year ${year}`,
+          availableYears: priceData.map((entry) => entry.year),
+        },
+        { status: 404 }
+      );
+    }
+
+    // Calculate year-over-year change
+    const previousYearData = priceData.find(
+      (entry) => entry.year === yearNum - 1
+    );
+    const changeFromPreviousYear = previousYearData
+      ? (
+          ((yearData.priceIndex - previousYearData.priceIndex) /
+            previousYearData.priceIndex) *
+          100
+        ).toFixed(2) + "%"
+      : "N/A";
+
     return NextResponse.json({
-      city: "Pune",
-      data: PUNE_PRICE_DATA.map((entry) => ({
-        year: entry.year,
-        quarter: entry.quarter,
-        priceIndex: entry.priceIndex,
-        unit: "NHB Residex",
-        source: "https://nhb.org.in/residex",
-      })),
+      city: city.charAt(0).toUpperCase() + city.slice(1),
+      year: yearNum,
+      quarter: quarter,
+      priceIndex: yearData.priceIndex,
+      unit: yearData.unit,
+      source: yearData.source,
       meta: {
-        description: "NHB RESIDEX quarterly price index for Pune",
-        baseYear: 2015,
-        lastUpdated: "2024-01-15",
+        changeFromPreviousYear,
+        changeFromBase: yearData.meta?.changeFromBase || "N/A",
+        description:
+          yearData.meta?.description || `Property price data for ${city}`,
       },
     });
-  }
-
-  // Find data for specific year
-  const yearNum = parseInt(year);
-  const priceData = PUNE_PRICE_DATA.find((entry) => entry.year === yearNum);
-
-  if (!priceData) {
+  } catch (error) {
+    console.error("Error fetching price data:", error);
     return NextResponse.json(
       {
-        error: `No data available for year ${year}`,
-        availableYears: PUNE_PRICE_DATA.map((entry) => entry.year),
+        error: "Failed to fetch price data",
+        message: error instanceof Error ? error.message : "Unknown error",
       },
-      { status: 404 }
+      { status: 500 }
     );
   }
-
-  return NextResponse.json({
-    city: "Pune",
-    year: yearNum,
-    quarter: quarter,
-    priceIndex: priceData.priceIndex,
-    unit: "NHB Residex",
-    source: "https://nhb.org.in/residex",
-    meta: {
-      changeFromPreviousYear:
-        yearNum > 2015
-          ? (
-              ((priceData.priceIndex -
-                (PUNE_PRICE_DATA.find((e) => e.year === yearNum - 1)
-                  ?.priceIndex || 100)) /
-                (PUNE_PRICE_DATA.find((e) => e.year === yearNum - 1)
-                  ?.priceIndex || 100)) *
-              100
-            ).toFixed(2) + "%"
-          : "N/A",
-      changeFromBase:
-        (((priceData.priceIndex - 100) / 100) * 100).toFixed(2) + "%",
-    },
-  });
 }

@@ -15,7 +15,7 @@ import {
   Brain,
   BarChart3,
 } from "lucide-react";
-import { QueryProcessor, MockDataGenerator } from "./QueryProcessor";
+import { RealDataAPIClient } from "./QueryProcessor";
 import { CITY_CONFIGS, type EnhancedQueryResult } from "@/lib/types";
 import "leaflet/dist/leaflet.css";
 
@@ -80,113 +80,92 @@ export default function MapInterface() {
     }
   };
 
-  // Generate sample data based on current city
-  const getSampleData = () => {
-    if (currentCity === "pune") {
-      return [
-        {
-          type: "Feature" as const,
-          geometry: {
-            type: "Polygon" as const,
-            coordinates: [
-              [
-                [73.8027, 18.5024],
-                [73.8127, 18.5024],
-                [73.8127, 18.5124],
-                [73.8027, 18.5124],
-                [73.8027, 18.5024],
-              ],
-            ],
-          },
-          properties: {
-            name: "Kothrud",
-            priceChange: 38,
-            floodRisk: 68,
-            area: "Kothrud",
-            ward: "Kothrud",
-            city: "Pune",
-          },
-        },
-        {
-          type: "Feature" as const,
-          geometry: {
-            type: "Polygon" as const,
-            coordinates: [
-              [
-                [73.802, 18.5529],
-                [73.812, 18.5529],
-                [73.812, 18.5629],
-                [73.802, 18.5629],
-                [73.802, 18.5529],
-              ],
-            ],
-          },
-          properties: {
-            name: "Aundh",
-            priceChange: 42,
-            floodRisk: 61,
-            area: "Aundh",
-            ward: "Aundh",
-            city: "Pune",
-          },
-        },
-      ];
-    } else {
-      // Mumbai data
-      return [
-        {
-          type: "Feature" as const,
-          geometry: {
-            type: "Polygon" as const,
-            coordinates: [
-              [
-                [72.8077, 19.046],
-                [72.8277, 19.046],
-                [72.8277, 19.066],
-                [72.8077, 19.066],
-                [72.8077, 19.046],
-              ],
-            ],
-          },
-          properties: {
-            name: "Bandra West",
-            priceChange: 35,
-            floodRisk: 45,
-            area: "Bandra",
-            ward: "Bandra West",
-            city: "Mumbai",
-          },
-        },
-        {
-          type: "Feature" as const,
-          geometry: {
-            type: "Polygon" as const,
-            coordinates: [
-              [
-                [72.8477, 19.076],
-                [72.8677, 19.076],
-                [72.8677, 19.096],
-                [72.8477, 19.096],
-                [72.8477, 19.076],
-              ],
-            ],
-          },
-          properties: {
-            name: "Khar West",
-            priceChange: 42,
-            floodRisk: 38,
-            area: "Khar",
-            ward: "Khar West",
-            city: "Mumbai",
-          },
-        },
-      ];
-    }
-  };
+  // State for base map data
+  const [baseMapData, setBaseMapData] = useState<
+    Array<{
+      type: "Feature";
+      geometry: {
+        type: "Polygon";
+        coordinates: number[][][];
+      };
+      properties: {
+        name: string;
+        priceChange: number;
+        floodRisk: number;
+        area: string;
+        ward: string;
+        city: string;
+        population?: number;
+        avgPropertyValue?: string;
+      };
+    }>
+  >([]);
 
-  const samplePolygons = getSampleData();
+  // Load base map data when city changes
+  useEffect(() => {
+    const loadBaseMapData = async () => {
+      try {
+        // Fetch ward boundary data for the current city
+        const response = await fetch(`/api/risk?city=${currentCity}`);
+        if (response.ok) {
+          const data = await response.json();
 
-  // Generate map data from query results or use sample data
+          // Convert ward data to map features
+          const features =
+            data.wards?.map(
+              (ward: {
+                ward: string;
+                coordinates: [number, number];
+                population?: number;
+                avgPropertyValue?: string;
+                currentRisk: { riskScore: number };
+                riskTrend: { currentScore: number; baselineScore: number };
+              }) => ({
+                type: "Feature" as const,
+                geometry: {
+                  type: "Polygon" as const,
+                  coordinates: [
+                    // Generate approximate polygon from center coordinates
+                    [
+                      [ward.coordinates[1] - 0.01, ward.coordinates[0] - 0.01],
+                      [ward.coordinates[1] + 0.01, ward.coordinates[0] - 0.01],
+                      [ward.coordinates[1] + 0.01, ward.coordinates[0] + 0.01],
+                      [ward.coordinates[1] - 0.01, ward.coordinates[0] + 0.01],
+                      [ward.coordinates[1] - 0.01, ward.coordinates[0] - 0.01],
+                    ],
+                  ],
+                },
+                properties: {
+                  name: ward.ward,
+                  priceChange: Math.round(
+                    ((ward.riskTrend.currentScore -
+                      ward.riskTrend.baselineScore) /
+                      ward.riskTrend.baselineScore) *
+                      100
+                  ),
+                  floodRisk: Math.round(ward.currentRisk.riskScore * 100),
+                  area: ward.ward.split(" ")[0],
+                  ward: ward.ward,
+                  city: data.city,
+                  population: ward.population,
+                  avgPropertyValue: ward.avgPropertyValue,
+                },
+              })
+            ) || [];
+
+          setBaseMapData(features);
+        }
+      } catch (error) {
+        console.error("Failed to load base map data:", error);
+        // Keep empty array if load fails
+        setBaseMapData([]);
+      }
+    };
+
+    loadBaseMapData();
+  }, [currentCity]);
+
+  // Generate map data from query results or use base map data
   const mapData = queryResult
     ? {
         type: "FeatureCollection" as const,
@@ -201,7 +180,7 @@ export default function MapInterface() {
       }
     : {
         type: "FeatureCollection" as const,
-        features: samplePolygons,
+        features: baseMapData,
       };
 
   const handleQuery = useCallback(async () => {
@@ -221,7 +200,6 @@ export default function MapInterface() {
 
       // Process the natural language query
       await new Promise((resolve) => setTimeout(resolve, 800));
-      const processedQuery = QueryProcessor.processQuery(enhancedQuery);
 
       setProcessingStage("Searching property databases...");
       await new Promise((resolve) => setTimeout(resolve, 700));
@@ -232,15 +210,15 @@ export default function MapInterface() {
       setProcessingStage("Generating insights...");
       await new Promise((resolve) => setTimeout(resolve, 400));
 
-      // Try to use the real API first, then fallback to mock data
+      // Use real API to get data
       let result: QueryResult;
       try {
-        result = await MockDataGenerator.queryNaturalLanguageAPI(enhancedQuery);
+        result = await RealDataAPIClient.queryNaturalLanguageAPI(enhancedQuery);
       } catch (error) {
-        console.log("API failed, using mock data:", error);
-        // Fallback to mock data with city context
-        processedQuery.intent.city = currentCity;
-        result = MockDataGenerator.generateResults(processedQuery.intent);
+        console.error("Failed to fetch real data:", error);
+        setIsQuerying(false);
+        setProcessingStage("Error: Unable to fetch data. Please try again.");
+        return;
       }
 
       setQueryResult(result);

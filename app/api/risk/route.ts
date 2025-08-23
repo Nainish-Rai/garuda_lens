@@ -1,83 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-
-// Mock climate risk data for Pune wards with flood risk levels
-const PUNE_WARD_RISK_DATA = [
-  {
-    ward: "Kothrud",
-    coordinates: [18.5074, 73.8077],
-    riskData: [
-      { year: 2015, floodRiskLevel: "Low", riskScore: 0.3 },
-      { year: 2016, floodRiskLevel: "Low", riskScore: 0.32 },
-      { year: 2017, floodRiskLevel: "Moderate", riskScore: 0.38 },
-      { year: 2018, floodRiskLevel: "Moderate", riskScore: 0.42 },
-      { year: 2019, floodRiskLevel: "Moderate", riskScore: 0.45 },
-      { year: 2020, floodRiskLevel: "Moderate", riskScore: 0.55 },
-      { year: 2021, floodRiskLevel: "Moderate", riskScore: 0.58 },
-      { year: 2022, floodRiskLevel: "High", riskScore: 0.62 },
-      { year: 2023, floodRiskLevel: "High", riskScore: 0.68 },
-    ],
-  },
-  {
-    ward: "Aundh",
-    coordinates: [18.5579, 73.807],
-    riskData: [
-      { year: 2015, floodRiskLevel: "Low", riskScore: 0.2 },
-      { year: 2016, floodRiskLevel: "Low", riskScore: 0.22 },
-      { year: 2017, floodRiskLevel: "Low", riskScore: 0.28 },
-      { year: 2018, floodRiskLevel: "Moderate", riskScore: 0.35 },
-      { year: 2019, floodRiskLevel: "Moderate", riskScore: 0.42 },
-      { year: 2020, floodRiskLevel: "Moderate", riskScore: 0.5 },
-      { year: 2021, floodRiskLevel: "Moderate", riskScore: 0.52 },
-      { year: 2022, floodRiskLevel: "Moderate", riskScore: 0.55 },
-      { year: 2023, floodRiskLevel: "High", riskScore: 0.61 },
-    ],
-  },
-  {
-    ward: "Koregaon Park",
-    coordinates: [18.5362, 73.898],
-    riskData: [
-      { year: 2015, floodRiskLevel: "Low", riskScore: 0.15 },
-      { year: 2016, floodRiskLevel: "Low", riskScore: 0.18 },
-      { year: 2017, floodRiskLevel: "Low", riskScore: 0.22 },
-      { year: 2018, floodRiskLevel: "Low", riskScore: 0.28 },
-      { year: 2019, floodRiskLevel: "Moderate", riskScore: 0.35 },
-      { year: 2020, floodRiskLevel: "Moderate", riskScore: 0.42 },
-      { year: 2021, floodRiskLevel: "Moderate", riskScore: 0.48 },
-      { year: 2022, floodRiskLevel: "Moderate", riskScore: 0.52 },
-      { year: 2023, floodRiskLevel: "Moderate", riskScore: 0.58 },
-    ],
-  },
-  {
-    ward: "Shivajinagar",
-    coordinates: [18.5304, 73.8567],
-    riskData: [
-      { year: 2015, floodRiskLevel: "Moderate", riskScore: 0.4 },
-      { year: 2016, floodRiskLevel: "Moderate", riskScore: 0.43 },
-      { year: 2017, floodRiskLevel: "Moderate", riskScore: 0.48 },
-      { year: 2018, floodRiskLevel: "High", riskScore: 0.55 },
-      { year: 2019, floodRiskLevel: "High", riskScore: 0.62 },
-      { year: 2020, floodRiskLevel: "High", riskScore: 0.68 },
-      { year: 2021, floodRiskLevel: "High", riskScore: 0.72 },
-      { year: 2022, floodRiskLevel: "High", riskScore: 0.78 },
-      { year: 2023, floodRiskLevel: "Very High", riskScore: 0.85 },
-    ],
-  },
-  {
-    ward: "Viman Nagar",
-    coordinates: [18.5679, 73.9143],
-    riskData: [
-      { year: 2015, floodRiskLevel: "Low", riskScore: 0.25 },
-      { year: 2016, floodRiskLevel: "Low", riskScore: 0.28 },
-      { year: 2017, floodRiskLevel: "Moderate", riskScore: 0.35 },
-      { year: 2018, floodRiskLevel: "Moderate", riskScore: 0.42 },
-      { year: 2019, floodRiskLevel: "Moderate", riskScore: 0.48 },
-      { year: 2020, floodRiskLevel: "Moderate", riskScore: 0.55 },
-      { year: 2021, floodRiskLevel: "High", riskScore: 0.62 },
-      { year: 2022, floodRiskLevel: "High", riskScore: 0.68 },
-      { year: 2023, floodRiskLevel: "High", riskScore: 0.75 },
-    ],
-  },
-];
+import { fetchRiskData, fetchWardData } from "@/lib/data-fetchers";
 
 export async function GET(request: NextRequest) {
   const { searchParams } = new URL(request.url);
@@ -86,130 +8,132 @@ export async function GET(request: NextRequest) {
   const year = searchParams.get("year");
 
   // Validate city parameter
-  if (!city || city.toLowerCase() !== "pune") {
+  if (!city) {
     return NextResponse.json(
       {
-        error: "Invalid city parameter. Currently only Pune is supported.",
-        supportedCities: ["Pune"],
+        error: "City parameter is required.",
+        supportedCities: ["Pune", "Mumbai", "Delhi", "Bangalore"],
       },
       { status: 400 }
     );
   }
 
-  // If no ward specified, return all wards data
-  if (!ward) {
-    const allWardsData = PUNE_WARD_RISK_DATA.map((wardData) => {
-      const latestData = wardData.riskData[wardData.riskData.length - 1];
-      return {
-        ward: wardData.ward,
-        coordinates: wardData.coordinates,
-        currentRisk: {
-          year: latestData.year,
-          floodRiskLevel: latestData.floodRiskLevel,
-          riskScore: latestData.riskScore,
+  try {
+    // If no ward specified, return all wards data
+    if (!ward) {
+      const allWardsData = await fetchWardData(city);
+
+      if (!allWardsData || allWardsData.length === 0) {
+        return NextResponse.json(
+          {
+            error: `No ward data available for ${city}`,
+            supportedCities: ["Pune", "Mumbai", "Delhi", "Bangalore"],
+          },
+          { status: 404 }
+        );
+      }
+
+      return NextResponse.json({
+        city: city.charAt(0).toUpperCase() + city.slice(1),
+        wards: allWardsData.map((w) => ({
+          ward: w.ward,
+          coordinates: w.coordinates,
+          population: w.population,
+          avgPropertyValue: w.avgPropertyValue,
+          currentRisk: w.currentRisk,
+          riskTrend: w.riskTrend,
+        })),
+        meta: {
+          availableWards: allWardsData.map((w) => w.ward),
+          dataSource: "Real-time flood risk assessment",
+          lastUpdated: new Date().toISOString().split("T")[0],
         },
-        riskTrend: {
-          baselineScore: wardData.riskData[0].riskScore,
-          currentScore: latestData.riskScore,
-          changePercent:
-            (
-              ((latestData.riskScore - wardData.riskData[0].riskScore) /
-                wardData.riskData[0].riskScore) *
-              100
-            ).toFixed(1) + "%",
-        },
-      };
-    });
+      });
+    }
 
-    return NextResponse.json({
-      city: "Pune",
-      wards: allWardsData,
-      meta: {
-        availableWards: PUNE_WARD_RISK_DATA.map((w) => w.ward),
-        dataSource: "https://ffs.india-water.gov.in/",
-        lastUpdated: "2024-01-15",
-      },
-    });
-  }
+    // Find specific ward data
+    const wardData = await fetchWardData(city, ward);
 
-  // Find specific ward data
-  const wardData = PUNE_WARD_RISK_DATA.find(
-    (w) => w.ward.toLowerCase() === ward.toLowerCase()
-  );
-
-  if (!wardData) {
-    return NextResponse.json(
-      {
-        error: `Ward '${ward}' not found`,
-        availableWards: PUNE_WARD_RISK_DATA.map((w) => w.ward),
-      },
-      { status: 404 }
-    );
-  }
-
-  // If year specified, return data for that year
-  if (year) {
-    const yearNum = parseInt(year);
-    const yearData = wardData.riskData.find((r) => r.year === yearNum);
-
-    if (!yearData) {
+    if (!wardData || wardData.length === 0) {
       return NextResponse.json(
         {
-          error: `No data available for year ${year}`,
-          availableYears: wardData.riskData.map((r) => r.year),
+          error: `Ward '${ward}' not found in ${city}`,
+          message: "Try fetching all wards to see available options",
         },
         { status: 404 }
       );
     }
 
+    const specificWard = wardData[0]; // Should be exactly one match
+
+    // If year specified, return risk data for that year
+    if (year) {
+      const yearNum = parseInt(year);
+      const riskData = await fetchRiskData(city, specificWard.ward, yearNum);
+
+      const yearData = riskData.find((r) => r.year === yearNum);
+
+      if (!yearData) {
+        return NextResponse.json(
+          {
+            error: `No risk data available for year ${year}`,
+            availableYears: riskData.map((r) => r.year),
+          },
+          { status: 404 }
+        );
+      }
+
+      return NextResponse.json({
+        city: city.charAt(0).toUpperCase() + city.slice(1),
+        ward: specificWard.ward,
+        year: yearNum,
+        coordinates: specificWard.coordinates,
+        floodRiskLevel: yearData.floodRiskLevel,
+        riskScore: yearData.riskScore,
+        unit: yearData.unit,
+        source: yearData.source,
+        meta: {
+          description:
+            "Flood risk assessment based on real-time climate and infrastructure data",
+          riskLevels: {
+            Low: "0.0 - 0.3",
+            Moderate: "0.3 - 0.6",
+            High: "0.6 - 0.8",
+            "Very High": "0.8 - 1.0",
+          },
+        },
+      });
+    }
+
+    // Return all historical data for the ward
+    const historicalRiskData = await fetchRiskData(city, specificWard.ward);
+
     return NextResponse.json({
-      city: "Pune",
-      ward: wardData.ward,
-      year: yearNum,
-      coordinates: wardData.coordinates,
-      floodRiskLevel: yearData.floodRiskLevel,
-      riskScore: yearData.riskScore,
+      city: city.charAt(0).toUpperCase() + city.slice(1),
+      ward: specificWard.ward,
+      coordinates: specificWard.coordinates,
+      population: specificWard.population,
+      avgPropertyValue: specificWard.avgPropertyValue,
+      historicalData: historicalRiskData,
+      currentRisk: specificWard.currentRisk,
+      riskTrend: specificWard.riskTrend,
       unit: "0–1 scale",
-      source: "https://ffs.india-water.gov.in/",
+      source: "Real-time flood risk assessment",
       meta: {
         description:
-          "Flood risk assessment based on CWC flood hazard maps and PMC GIS data",
-        riskLevels: {
-          Low: "0.0 - 0.3",
-          Moderate: "0.3 - 0.6",
-          High: "0.6 - 0.8",
-          "Very High": "0.8 - 1.0",
-        },
+          "Comprehensive flood risk assessment with historical trends",
+        dataPoints: historicalRiskData.length,
+        lastUpdated: new Date().toISOString().split("T")[0],
       },
     });
+  } catch (error) {
+    console.error("Error fetching risk data:", error);
+    return NextResponse.json(
+      {
+        error: "Failed to fetch risk data",
+        message: error instanceof Error ? error.message : "Unknown error",
+      },
+      { status: 500 }
+    );
   }
-
-  // Return all historical data for the ward
-  return NextResponse.json({
-    city: "Pune",
-    ward: wardData.ward,
-    coordinates: wardData.coordinates,
-    historicalData: wardData.riskData,
-    currentRisk: wardData.riskData[wardData.riskData.length - 1],
-    riskTrend: {
-      baselineYear: wardData.riskData[0].year,
-      baselineScore: wardData.riskData[0].riskScore,
-      currentYear: wardData.riskData[wardData.riskData.length - 1].year,
-      currentScore: wardData.riskData[wardData.riskData.length - 1].riskScore,
-      totalChange:
-        (
-          ((wardData.riskData[wardData.riskData.length - 1].riskScore -
-            wardData.riskData[0].riskScore) /
-            wardData.riskData[0].riskScore) *
-          100
-        ).toFixed(1) + "%",
-    },
-    unit: "0–1 scale",
-    source: "https://ffs.india-water.gov.in/",
-    meta: {
-      description:
-        "Flood risk assessment based on CWC flood hazard maps and PMC GIS data",
-      dataPoints: wardData.riskData.length,
-    },
-  });
 }

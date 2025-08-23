@@ -1,380 +1,9 @@
 import { NextRequest, NextResponse } from "next/server";
 import { GoogleGenerativeAI } from "@google/generative-ai";
+import { processNaturalLanguageQuery } from "@/lib/data-fetchers";
 
 // Initialize Gemini AI
 const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY || "");
-
-// Enhanced query processor for Pune-specific data
-interface QueryFilters {
-  priceChangePercent?: string;
-  riskIncrease?: boolean;
-  timeRange?: {
-    start: number;
-    end: number;
-  };
-  ward?: string;
-  city?: string;
-}
-
-interface QueryResult {
-  ward: string;
-  coordinates: [number, number];
-  priceChangePercent: number;
-  riskChange: string;
-  currentRiskLevel: string;
-  currentPriceIndex: number;
-  population?: number;
-  avgPropertyValue?: string;
-}
-
-// Combined mock data for Pune wards
-const PUNE_INTEGRATED_DATA = [
-  {
-    ward: "Kothrud",
-    coordinates: [18.5074, 73.8077] as [number, number],
-    population: 180000,
-    avgPropertyValue: "₹85 Lakh",
-    priceHistory: {
-      2015: 100,
-      2016: 104,
-      2017: 109,
-      2018: 112,
-      2019: 118,
-      2020: 115,
-      2021: 122,
-      2022: 128,
-      2023: 138,
-    },
-    riskHistory: {
-      2015: 0.3,
-      2016: 0.32,
-      2017: 0.38,
-      2018: 0.42,
-      2019: 0.45,
-      2020: 0.55,
-      2021: 0.58,
-      2022: 0.62,
-      2023: 0.68,
-    },
-  },
-  {
-    ward: "Aundh",
-    coordinates: [18.5579, 73.807] as [number, number],
-    population: 220000,
-    avgPropertyValue: "₹1.2 Cr",
-    priceHistory: {
-      2015: 100,
-      2016: 106,
-      2017: 114,
-      2018: 118,
-      2019: 125,
-      2020: 122,
-      2021: 130,
-      2022: 134,
-      2023: 142,
-    },
-    riskHistory: {
-      2015: 0.2,
-      2016: 0.22,
-      2017: 0.28,
-      2018: 0.35,
-      2019: 0.42,
-      2020: 0.5,
-      2021: 0.52,
-      2022: 0.55,
-      2023: 0.61,
-    },
-  },
-  {
-    ward: "Koregaon Park",
-    coordinates: [18.5362, 73.898] as [number, number],
-    population: 95000,
-    avgPropertyValue: "₹1.8 Cr",
-    priceHistory: {
-      2015: 100,
-      2016: 108,
-      2017: 116,
-      2018: 122,
-      2019: 130,
-      2020: 126,
-      2021: 135,
-      2022: 142,
-      2023: 148,
-    },
-    riskHistory: {
-      2015: 0.15,
-      2016: 0.18,
-      2017: 0.22,
-      2018: 0.28,
-      2019: 0.35,
-      2020: 0.42,
-      2021: 0.48,
-      2022: 0.52,
-      2023: 0.58,
-    },
-  },
-  {
-    ward: "Shivajinagar",
-    coordinates: [18.5304, 73.8567] as [number, number],
-    population: 150000,
-    avgPropertyValue: "₹65 Lakh",
-    priceHistory: {
-      2015: 100,
-      2016: 103,
-      2017: 107,
-      2018: 110,
-      2019: 115,
-      2020: 112,
-      2021: 118,
-      2022: 123,
-      2023: 126,
-    },
-    riskHistory: {
-      2015: 0.4,
-      2016: 0.43,
-      2017: 0.48,
-      2018: 0.55,
-      2019: 0.62,
-      2020: 0.68,
-      2021: 0.72,
-      2022: 0.78,
-      2023: 0.85,
-    },
-  },
-  {
-    ward: "Viman Nagar",
-    coordinates: [18.5679, 73.9143] as [number, number],
-    population: 125000,
-    avgPropertyValue: "₹95 Lakh",
-    priceHistory: {
-      2015: 100,
-      2016: 105,
-      2017: 112,
-      2018: 118,
-      2019: 124,
-      2020: 120,
-      2021: 128,
-      2022: 135,
-      2023: 143,
-    },
-    riskHistory: {
-      2015: 0.25,
-      2016: 0.28,
-      2017: 0.35,
-      2018: 0.42,
-      2019: 0.48,
-      2020: 0.55,
-      2021: 0.62,
-      2022: 0.68,
-      2023: 0.75,
-    },
-  },
-];
-
-async function parseQueryWithGemini(query: string): Promise<QueryFilters> {
-  try {
-    const model = genAI.getGenerativeModel({ model: "gemini-pro" });
-
-    const prompt = `
-    You are a real estate and climate data query parser. Parse the following natural language query and extract specific filters in JSON format.
-
-    Available wards in Pune: Kothrud, Aundh, Koregaon Park, Shivajinagar, Viman Nagar
-    Available years: 2015-2023
-
-    Query: "${query}"
-
-    Extract and return ONLY a JSON object with these possible fields:
-    {
-      "priceChangePercent": ">30" (if user mentions >30% or similar),
-      "riskIncrease": true/false (if user mentions risk increase),
-      "timeRange": {"start": 2015, "end": 2023},
-      "ward": "exact ward name if specified",
-      "city": "Pune" (default if not specified)
-    }
-
-    Rules:
-    - priceChangePercent should be in format ">X" where X is the percentage
-    - riskIncrease is true if query mentions flood risk or climate risk increase
-    - timeRange start year should be extracted from phrases like "since 2015"
-    - ward should match exactly one of the available wards
-    - Only include fields that are explicitly mentioned or can be inferred
-
-    Return ONLY the JSON object, no explanation:
-    `;
-
-    const result = await model.generateContent(prompt);
-    const response = await result.response;
-    const text = response.text().trim();
-
-    // Clean up the response and parse JSON
-    const cleanText = text.replace(/```json|```/g, "").trim();
-
-    try {
-      return JSON.parse(cleanText);
-    } catch (parseError) {
-      console.warn("Failed to parse Gemini response as JSON:", cleanText);
-      // Fallback to basic parsing
-      return parseQueryBasic(query);
-    }
-  } catch (error) {
-    console.warn("Gemini API error, falling back to basic parsing:", error);
-    return parseQueryBasic(query);
-  }
-}
-
-function parseQueryBasic(query: string): QueryFilters {
-  const normalizedQuery = query.toLowerCase();
-  const filters: QueryFilters = {};
-
-  // Extract price change threshold
-  const priceMatch = normalizedQuery.match(
-    />(\d+)%|more than (\d+)%|above (\d+)%/
-  );
-  if (priceMatch) {
-    const percentage = priceMatch[1] || priceMatch[2] || priceMatch[3];
-    filters.priceChangePercent = `>${percentage}`;
-  }
-
-  // Check for risk increase pattern
-  if (
-    normalizedQuery.includes("risk") &&
-    (normalizedQuery.includes("increase") ||
-      normalizedQuery.includes("rose") ||
-      normalizedQuery.includes("higher"))
-  ) {
-    filters.riskIncrease = true;
-  }
-
-  // Extract time range
-  const sinceMatch = normalizedQuery.match(/since (\d{4})/);
-  if (sinceMatch) {
-    filters.timeRange = {
-      start: parseInt(sinceMatch[1]),
-      end: 2023,
-    };
-  }
-
-  // Extract specific ward
-  const wardKeywords = [
-    "kothrud",
-    "aundh",
-    "koregaon park",
-    "shivajinagar",
-    "viman nagar",
-  ];
-  for (const ward of wardKeywords) {
-    if (normalizedQuery.includes(ward)) {
-      filters.ward = ward
-        .split(" ")
-        .map((w) => w.charAt(0).toUpperCase() + w.slice(1))
-        .join(" ");
-      break;
-    }
-  }
-
-  filters.city = "Pune"; // Default city
-  return filters;
-}
-
-function calculatePriceChange(
-  priceHistory: Record<number, number>,
-  startYear: number,
-  endYear: number
-): number {
-  const startPrice = priceHistory[startYear];
-  const endPrice = priceHistory[endYear];
-  return ((endPrice - startPrice) / startPrice) * 100;
-}
-
-function getRiskLevelFromScore(score: number): string {
-  if (score >= 0.8) return "Very High";
-  if (score >= 0.6) return "High";
-  if (score >= 0.3) return "Moderate";
-  return "Low";
-}
-
-async function generateInsightsWithGemini(
-  results: QueryResult[],
-  query: string
-): Promise<string[]> {
-  try {
-    const model = genAI.getGenerativeModel({ model: "gemini-pro" });
-
-    const dataContext = results
-      .map(
-        (r) =>
-          `${r.ward}: ${r.priceChangePercent}% price increase, ${r.currentRiskLevel} flood risk, ${r.population} residents`
-      )
-      .join("; ");
-
-    const prompt = `
-    Based on this real estate and climate data analysis for Pune, generate 3-4 insightful observations about the correlation between property values and flood risk:
-
-    Original Query: "${query}"
-    Data: ${dataContext}
-
-    Focus on:
-    1. Trends in property appreciation vs flood risk
-    2. Population impact
-    3. Climate gentrification patterns
-    4. Investment implications
-
-    Return as a JSON array of strings, each insight should be 1-2 sentences. Example format:
-    ["insight 1", "insight 2", "insight 3"]
-    `;
-
-    const result = await model.generateContent(prompt);
-    const response = await result.response;
-    const text = response.text().trim();
-
-    try {
-      const cleanText = text.replace(/```json|```/g, "").trim();
-      return JSON.parse(cleanText);
-    } catch (parseError) {
-      // Fallback to basic insights
-      return generateBasicInsights(results);
-    }
-  } catch (error) {
-    console.warn("Gemini insights generation failed:", error);
-    return generateBasicInsights(results);
-  }
-}
-
-function generateBasicInsights(results: QueryResult[]): string[] {
-  const insights = [];
-  if (results.length > 0) {
-    const avgPriceChange =
-      results.reduce((sum, r) => sum + r.priceChangePercent, 0) /
-      results.length;
-    insights.push(
-      `Average property price increase across matching wards: ${avgPriceChange.toFixed(
-        1
-      )}%`
-    );
-
-    const highRiskCount = results.filter(
-      (r) => r.currentRiskLevel === "High" || r.currentRiskLevel === "Very High"
-    ).length;
-    if (highRiskCount > 0) {
-      insights.push(
-        `${highRiskCount} out of ${results.length} wards now have high flood risk levels`
-      );
-    }
-
-    const totalPopulation = results.reduce(
-      (sum, r) => sum + (r.population || 0),
-      0
-    );
-    if (totalPopulation > 0) {
-      insights.push(
-        `Approximately ${(totalPopulation / 1000).toFixed(
-          0
-        )}K residents affected in these areas`
-      );
-    }
-  }
-  return insights;
-}
 
 export async function POST(request: NextRequest) {
   try {
@@ -388,113 +17,204 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // Parse the natural language query using Gemini AI
-    const filters = await parseQueryWithGemini(query);
-    const startYear = filters.timeRange?.start || 2015;
-    const endYear = filters.timeRange?.end || 2023;
+    const startTime = Date.now();
 
-    // Process each ward against the filters
-    const results: QueryResult[] = [];
+    // Extract city from query
+    const cityMatch = query
+      .toLowerCase()
+      .match(/\b(pune|mumbai|delhi|bangalore)\b/);
+    const city = cityMatch ? cityMatch[1] : "pune";
+    const cityCapitalized = city.charAt(0).toUpperCase() + city.slice(1);
 
-    for (const wardData of PUNE_INTEGRATED_DATA) {
-      // Skip if specific ward requested and this isn't it
-      if (filters.ward && wardData.ward !== filters.ward) {
-        continue;
+    // Process the query with real data
+    const results = await processNaturalLanguageQuery(query);
+
+    let geminiInsights: string[] = [];
+    let geminiUsed = false;
+
+    // Try to get enhanced insights from Gemini AI
+    if (process.env.GEMINI_API_KEY && results.length > 0) {
+      try {
+        const model = genAI.getGenerativeModel({ model: "gemini-2.5-flash" });
+
+        // Create context for Gemini
+        const context = `
+          Query: "${query}"
+          City: ${cityCapitalized}
+
+          Results found: ${results.length} wards
+          Ward data:
+          ${results
+            .map(
+              (r) => `
+          - ${r.ward}: ${r.priceChangePercent}% price increase, ${
+                r.currentRiskLevel
+              } flood risk
+            Population: ${
+              r.population ? (r.population / 1000).toFixed(0) + "K" : "N/A"
+            }
+            Property value: ${r.avgPropertyValue || "N/A"}
+          `
+            )
+            .join("")}
+
+          Please provide 3-4 analytical insights about climate gentrification patterns, focusing on:
+          1. The relationship between property value growth and climate risk
+          2. Socioeconomic implications for residents
+          3. Urban planning considerations
+          4. Future trends and recommendations
+
+          Keep insights factual, specific to the data, and under 50 words each.
+        `;
+
+        const result = await model.generateContent(context);
+        const response = await result.response;
+        const text = response.text();
+
+        // Parse Gemini response into individual insights
+        geminiInsights = text
+          .split("\n")
+          .filter((line) => line.trim().length > 0)
+          .filter((line) => !line.match(/^\d+\./)) // Remove numbered list markers
+          .map((line) => line.replace(/^[-•]\s*/, "").trim()) // Remove bullet points
+          .filter((line) => line.length > 20) // Filter out short lines
+          .slice(0, 4); // Limit to 4 insights
+
+        geminiUsed = true;
+      } catch (error) {
+        console.warn("Gemini AI unavailable, using standard insights:", error);
+        // Fall back to standard insights if Gemini fails
       }
-
-      // Calculate price change
-      const priceChangePercent = calculatePriceChange(
-        wardData.priceHistory,
-        startYear,
-        endYear
-      );
-
-      // Check price threshold
-      if (filters.priceChangePercent) {
-        const threshold = parseInt(filters.priceChangePercent.replace(">", ""));
-        if (priceChangePercent <= threshold) {
-          continue;
-        }
-      }
-
-      // Check risk increase
-      const startRisk =
-        wardData.riskHistory[startYear as keyof typeof wardData.riskHistory];
-      const endRisk =
-        wardData.riskHistory[endYear as keyof typeof wardData.riskHistory];
-      const riskIncreased = endRisk > startRisk;
-
-      if (filters.riskIncrease && !riskIncreased) {
-        continue;
-      }
-
-      // Add to results
-      results.push({
-        ward: wardData.ward,
-        coordinates: wardData.coordinates,
-        priceChangePercent: Math.round(priceChangePercent),
-        riskChange: `${startRisk.toFixed(1)} → ${endRisk.toFixed(1)}`,
-        currentRiskLevel: getRiskLevelFromScore(endRisk),
-        currentPriceIndex:
-          wardData.priceHistory[endYear as keyof typeof wardData.priceHistory],
-        population: wardData.population,
-        avgPropertyValue: wardData.avgPropertyValue,
-      });
     }
 
-    // Generate AI-powered insights
-    const insights = await generateInsightsWithGemini(results, query);
-
-    // Generate enhanced summary with Gemini
-    let summary = "";
-    if (results.length === 0) {
-      summary = `No wards in Pune match the specified criteria between ${startYear}–${endYear}.`;
-    } else {
-      const wardNames = results.map((r) => r.ward).join(" and ");
+    // Generate standard insights if Gemini is not available or failed
+    const standardInsights = [];
+    if (results.length > 0) {
       const avgPriceChange =
         results.reduce((sum, r) => sum + r.priceChangePercent, 0) /
         results.length;
 
-      summary = `Between ${startYear}–${endYear}, ${wardNames} ${
-        results.length === 1 ? "ward" : "wards"
-      } in Pune saw property prices rise ${
-        avgPriceChange > 25 ? "significantly" : "moderately"
-      } (avg: ${avgPriceChange.toFixed(1)}%) while flood risk ${
-        filters.riskIncrease ? "increased substantially" : "evolved"
-      }, suggesting patterns of climate-driven ${
-        results.length > 1 ? "gentrification trends" : "market changes"
-      }.`;
+      standardInsights.push(
+        `Average property appreciation of ${avgPriceChange.toFixed(
+          1
+        )}% across ${
+          results.length
+        } wards indicates significant market activity`
+      );
+
+      const highRiskCount = results.filter(
+        (r) =>
+          r.currentRiskLevel === "High" || r.currentRiskLevel === "Very High"
+      ).length;
+
+      if (highRiskCount > 0) {
+        standardInsights.push(
+          `${highRiskCount}/${results.length} wards now face high flood risk, suggesting climate vulnerability is increasing alongside property values`
+        );
+      }
+
+      const totalPopulation = results.reduce(
+        (sum, r) => sum + (r.population || 0),
+        0
+      );
+      if (totalPopulation > 0) {
+        standardInsights.push(
+          `Approximately ${(totalPopulation / 1000).toFixed(
+            0
+          )}K residents in these areas may face displacement pressure from rising property costs`
+        );
+      }
+
+      if (results.length > 1) {
+        standardInsights.push(
+          "Multiple wards showing this pattern indicates systematic climate gentrification dynamics in the region"
+        );
+      }
     }
 
+    // Use Gemini insights if available, otherwise use standard ones
+    const insights =
+      geminiInsights.length > 0 ? geminiInsights : standardInsights;
+
+    // Generate comprehensive summary
+    let summary = "";
+    if (results.length === 0) {
+      summary = `No wards in ${cityCapitalized} match the specified criteria.`;
+    } else {
+      const wardNames =
+        results.length <= 3
+          ? results.map((r) => r.ward).join(" and ")
+          : `${results
+              .slice(0, 2)
+              .map((r) => r.ward)
+              .join(", ")} and ${results.length - 2} others`;
+
+      const avgPriceChange =
+        results.reduce((sum, r) => sum + r.priceChangePercent, 0) /
+        results.length;
+
+      summary = `Analysis of ${cityCapitalized} reveals ${wardNames} experiencing ${
+        avgPriceChange > 40
+          ? "substantial"
+          : avgPriceChange > 25
+          ? "significant"
+          : "moderate"
+      } property value increases (${avgPriceChange.toFixed(
+        1
+      )}% average) concurrent with heightened climate risk. This correlation suggests emerging climate gentrification patterns that may displace vulnerable populations while concentrating environmental hazards in high-value areas.`;
+    }
+
+    const processingTime = Date.now() - startTime;
+
+    // Extract query parameters
+    const priceThresholdMatch = query.match(/(\d+)%/);
+    const hasRiskCriteria =
+      query.toLowerCase().includes("risk") &&
+      (query.toLowerCase().includes("increase") ||
+        query.toLowerCase().includes("rose"));
+    const timeMatch = query.match(/since (\d{4})/);
+    const timeRange = timeMatch
+      ? `${timeMatch[1]}–${new Date().getFullYear()}`
+      : "2015–2024";
+
     return NextResponse.json({
-      city: "Pune",
+      city: cityCapitalized,
       filters: {
-        priceChangePercent: filters.priceChangePercent || "any",
-        riskIncrease: filters.riskIncrease || false,
-        timeRange: `${startYear}–${endYear}`,
-        specificWard: filters.ward || null,
+        priceChangePercent: priceThresholdMatch
+          ? `>${priceThresholdMatch[1]}`
+          : "any",
+        riskIncrease: hasRiskCriteria,
+        timeRange,
+        naturalLanguageQuery:
+          query.substring(0, 150) + (query.length > 150 ? "..." : ""),
       },
       results,
       summary,
       insights,
       sources: [
-        "https://nhb.org.in/residex",
-        "https://ffs.india-water.gov.in/",
-        "Pune Municipal Corporation GIS",
-        "Census of India 2011",
+        "Real-time Property Data APIs",
+        "Climate Risk Assessment Systems",
+        "Municipal Geographic Information Systems",
+        "Demographic and Census Data",
       ],
       meta: {
         queryProcessed: query,
         resultsCount: results.length,
-        processingTime: new Date().toISOString(),
+        processingTime: `${processingTime}ms`,
+        timestamp: new Date().toISOString(),
+        geminiUsed,
+        dataFreshness: "Real-time aggregated data",
         aiProcessed: true,
-        geminiUsed: process.env.GEMINI_API_KEY ? true : false,
       },
     });
   } catch (error) {
     console.error("Gemini query processing error:", error);
     return NextResponse.json(
-      { error: "Failed to process query. Please check your request format." },
+      {
+        error: "Failed to process query with AI enhancement",
+        message: error instanceof Error ? error.message : "Unknown error",
+        fallback: "Try using the basic query endpoint",
+      },
       { status: 500 }
     );
   }

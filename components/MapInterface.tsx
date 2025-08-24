@@ -1,25 +1,29 @@
 "use client";
 
-import React, { useState, useRef, useCallback, useEffect } from "react";
+import React, { useState, useRef, useEffect } from "react";
 import { MapContainer, TileLayer, GeoJSON, useMap } from "react-leaflet";
 import { Map as LeafletMap, LatLngBounds } from "leaflet";
-import { Card, CardContent } from "@/components/ui/card";
-import { Button } from "@/components/ui/button";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Progress } from "@/components/ui/progress";
 import {
-  Calendar,
   MapPin,
   TrendingUp,
   Droplets,
   Loader2,
   AlertCircle,
   CheckCircle,
+  Activity,
 } from "lucide-react";
 import {
-  CITY_CONFIGS,
-  type EnhancedQueryResult,
-  type AnalysisJobStatus,
-} from "@/lib/types";
+  AreaChart,
+  Area,
+  ResponsiveContainer,
+  XAxis,
+  YAxis,
+  CartesianGrid,
+  Tooltip,
+} from "recharts";
+import { type EnhancedQueryResult, type AnalysisJobStatus } from "@/lib/types";
 import { cn } from "@/lib/utils";
 import SatelliteImageViewer from "./SatelliteImageViewer";
 import ChangeDetectionStatsComponent from "./ChangeDetectionStats";
@@ -43,23 +47,132 @@ function FitBounds({ bounds }: { bounds?: LatLngBounds }) {
   return null;
 }
 
+interface NDVIStatistics {
+  before: {
+    mean: number;
+    std: number;
+    min: number;
+    max: number;
+    median: number;
+  };
+  after: {
+    mean: number;
+    std: number;
+    min: number;
+    max: number;
+    median: number;
+  };
+  change: {
+    mean_change: number;
+    std_change: number;
+    significant_change_pixels: number;
+  };
+}
+
+interface NDVIChangeStatistics {
+  total_valid_pixels: number;
+  vegetation_gain: { count: number; percentage: number };
+  vegetation_loss: { count: number; percentage: number };
+  urbanization: { count: number; percentage: number };
+  urban_loss: { count: number; percentage: number };
+  water_gain: { count: number; percentage: number };
+  water_loss: { count: number; percentage: number };
+}
+
+interface NDVIAnalysisResult {
+  success: boolean;
+  location: string;
+  coordinates: { latitude: number; longitude: number };
+  timeline_start: string;
+  timeline_end: string;
+  chosen_dates: Array<{ date: string; cloud: string }>;
+  ndvi_analysis: {
+    ndvi_statistics: NDVIStatistics;
+    change_statistics: NDVIChangeStatistics;
+    analysis_focus: string;
+    detected_intents: {
+      vegetation_focus: boolean;
+      urban_focus: boolean;
+      water_focus: boolean;
+      general: boolean;
+    };
+  };
+  change_analysis: {
+    total_change_percentage: number;
+    dominant_change: string;
+    vegetation_change_net: number;
+    urban_change_net: number;
+    water_change_net: number;
+    change_intensity: string;
+  };
+  recommendations: string[];
+  visualizations: Record<string, unknown>;
+  socioeconomic_correlation: Record<string, unknown> | null;
+}
+
 interface MapInterfaceProps {
   queryResult?: EnhancedQueryResult | null;
   className?: string;
-  onAnalysisStart?: (jobId: string) => void;
   onAnalysisComplete?: (result: EnhancedQueryResult) => void;
+}
+
+interface MapFeature {
+  type: "Feature";
+  geometry: {
+    type: "Polygon";
+    coordinates: number[][][];
+  };
+  properties: {
+    name?: string;
+    priceChange?: number;
+    floodRisk?: number;
+    area?: string;
+    population?: number;
+    avgPropertyValue?: string;
+  };
+}
+
+interface AnalysisData {
+  type: string;
+  data?: {
+    results?: Array<{
+      ward?: string;
+      priceChangePercent?: number;
+      currentRiskLevel?: number;
+      population?: number;
+      avgPropertyValue?: string;
+    }>;
+    summary?: {
+      totalAreas: number;
+      avgPriceIncrease: number;
+      avgFloodRiskIncrease: number;
+      timeRange: string;
+      totalPopulation?: number;
+    };
+    insights?: string[];
+    city?: string;
+    sources?: {
+      propertyData: string;
+      riskData: string;
+      boundaryData: string;
+    };
+    meta?: {
+      queryProcessed: string;
+      resultsCount: number;
+      processingTime: string;
+      aiProcessed: boolean;
+      geminiUsed: boolean;
+    };
+  };
 }
 
 export default function MapInterface({
   queryResult: externalQueryResult,
   className,
-  onAnalysisStart,
   onAnalysisComplete,
 }: MapInterfaceProps) {
   const mapRef = useRef<LeafletMap>(null);
-  const [currentCity, setCurrentCity] = useState<string>("dynamic");
   const [viewState, setViewState] = useState<ViewState>(() => {
-    // Default to a global view that can be adjusted dynamically
     return {
       center: [20.5937, 78.9629], // Center of India
       zoom: 5,
@@ -67,273 +180,273 @@ export default function MapInterface({
   });
   const [mapBounds, setMapBounds] = useState<LatLngBounds | undefined>();
 
-  const [timeRange, setTimeRange] = useState([2015, 2024]);
   const [activeLayers, setActiveLayers] = useState({
     propertyHeatmap: true,
     climateRisk: true,
     boundaries: true,
   });
 
-  // NEW: Task 4 - Analysis job handling
   const [currentJob, setCurrentJob] = useState<AnalysisJobStatus | null>(null);
   const [isQuerying, setIsQuerying] = useState(false);
   const [analysisError, setAnalysisError] = useState<string | null>(null);
-  const [showSatelliteView, setShowSatelliteView] = useState(false);
-  const pollingIntervalRef = useRef<NodeJS.Timeout | null>(null);
+  const [showSatelliteView] = useState(false);
 
-  // NEW: Enhanced query handler for async analysis
-  const handleQuery = async (query: string) => {
-    try {
-      setIsQuerying(true);
-      setAnalysisError(null);
-      setCurrentJob(null);
+  const [ndviData, setNdviData] = useState<NDVIAnalysisResult | null>(null);
+  const [showNdviCharts, setShowNdviCharts] = useState(false);
 
-      // Call the new analysis endpoint
-      const response = await fetch("/api/analysis", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({ query }),
-      });
+  const renderNDVICharts = () => {
+    if (!ndviData || !showNdviCharts) return null;
 
-      if (!response.ok) {
-        throw new Error(`Analysis request failed: ${response.status}`);
-      }
+    const { ndvi_analysis, change_analysis } = ndviData;
 
-      const jobInfo = await response.json();
+    const changeData = [
+      {
+        category: "Vegetation Gain",
+        percentage: ndvi_analysis.change_statistics.vegetation_gain.percentage,
+        count: ndvi_analysis.change_statistics.vegetation_gain.count,
+        color: "#10b981",
+      },
+      {
+        category: "Vegetation Loss",
+        percentage: ndvi_analysis.change_statistics.vegetation_loss.percentage,
+        count: ndvi_analysis.change_statistics.vegetation_loss.count,
+        color: "#ef4444",
+      },
+      {
+        category: "Urbanization",
+        percentage: ndvi_analysis.change_statistics.urbanization.percentage,
+        count: ndvi_analysis.change_statistics.urbanization.count,
+        color: "#f59e0b",
+      },
+      {
+        category: "Urban Loss",
+        percentage: ndvi_analysis.change_statistics.urban_loss.percentage,
+        count: ndvi_analysis.change_statistics.urban_loss.count,
+        color: "#8b5cf6",
+      },
+      {
+        category: "Water Gain",
+        percentage: ndvi_analysis.change_statistics.water_gain.percentage,
+        count: ndvi_analysis.change_statistics.water_gain.count,
+        color: "#06b6d4",
+      },
+      {
+        category: "Water Loss",
+        percentage: ndvi_analysis.change_statistics.water_loss.percentage,
+        count: ndvi_analysis.change_statistics.water_loss.count,
+        color: "#dc2626",
+      },
+    ];
 
-      // Start polling for job status
-      setCurrentJob({
-        jobId: jobInfo.jobId,
-        status: "PENDING",
-        progress: "Starting analysis...",
-        elapsedTime: 0,
-      });
+    const ndviComparisonData = [
+      {
+        metric: "Mean NDVI",
+        before: ndvi_analysis.ndvi_statistics.before.mean,
+        after: ndvi_analysis.ndvi_statistics.after.mean,
+        change: ndvi_analysis.ndvi_statistics.change.mean_change,
+      },
+      {
+        metric: "Median NDVI",
+        before: ndvi_analysis.ndvi_statistics.before.median,
+        after: ndvi_analysis.ndvi_statistics.after.median,
+        change:
+          ndvi_analysis.ndvi_statistics.after.median -
+          ndvi_analysis.ndvi_statistics.before.median,
+      },
+      {
+        metric: "Max NDVI",
+        before: ndvi_analysis.ndvi_statistics.before.max,
+        after: ndvi_analysis.ndvi_statistics.after.max,
+        change:
+          ndvi_analysis.ndvi_statistics.after.max -
+          ndvi_analysis.ndvi_statistics.before.max,
+      },
+    ];
 
-      onAnalysisStart?.(jobInfo.jobId);
+    return (
+      <div className="space-y-4">
+        <Card>
+          <CardHeader>
+            <CardTitle className="flex items-center space-x-2">
+              <TrendingUp className="h-5 w-5 text-green-500" />
+              <span>Land Use Change Distribution</span>
+            </CardTitle>
+          </CardHeader>
+          <CardContent>
+            <ResponsiveContainer width="100%" height={300}>
+              <AreaChart data={changeData}>
+                <CartesianGrid strokeDasharray="3 3" stroke="#374151" />
+                <XAxis
+                  dataKey="category"
+                  stroke="#6b7280"
+                  fontSize={12}
+                  angle={-45}
+                  textAnchor="end"
+                  height={80}
+                />
+                <YAxis stroke="#6b7280" fontSize={12} />
+                <Tooltip
+                  contentStyle={{
+                    backgroundColor: "#1f2937",
+                    border: "1px solid #374151",
+                    borderRadius: "8px",
+                    color: "#f9fafb",
+                  }}
+                  formatter={(value) => [
+                    `${Number(value).toFixed(2)}%`,
+                    "Percentage",
+                  ]}
+                  labelFormatter={(label) => `Change Type: ${label}`}
+                />
+                <Area
+                  type="monotone"
+                  dataKey="percentage"
+                  stroke="#10b981"
+                  fill="url(#colorGradient)"
+                  strokeWidth={2}
+                />
+                <defs>
+                  <linearGradient
+                    id="colorGradient"
+                    x1="0"
+                    y1="0"
+                    x2="0"
+                    y2="1"
+                  >
+                    <stop offset="5%" stopColor="#10b981" stopOpacity={0.8} />
+                    <stop offset="95%" stopColor="#10b981" stopOpacity={0.1} />
+                  </linearGradient>
+                </defs>
+              </AreaChart>
+            </ResponsiveContainer>
+          </CardContent>
+        </Card>
 
-      // Start polling
-      startJobPolling(jobInfo.jobId, jobInfo.pollingUrl);
-    } catch (error) {
-      console.error("Query error:", error);
-      setAnalysisError(
-        error instanceof Error ? error.message : "Unknown error occurred"
-      );
-      setIsQuerying(false);
-    }
+        <Card>
+          <CardHeader>
+            <CardTitle className="flex items-center space-x-2">
+              <Activity className="h-5 w-5 text-blue-500" />
+              <span>NDVI Values Comparison</span>
+            </CardTitle>
+          </CardHeader>
+          <CardContent>
+            <ResponsiveContainer width="100%" height={250}>
+              <AreaChart data={ndviComparisonData}>
+                <CartesianGrid strokeDasharray="3 3" stroke="#374151" />
+                <XAxis dataKey="metric" stroke="#6b7280" fontSize={12} />
+                <YAxis stroke="#6b7280" fontSize={12} />
+                <Tooltip
+                  contentStyle={{
+                    backgroundColor: "#1f2937",
+                    border: "1px solid #374151",
+                    borderRadius: "8px",
+                    color: "#f9fafb",
+                  }}
+                  formatter={(value, name) => [
+                    Number(value).toFixed(3),
+                    name === "before"
+                      ? "Before"
+                      : name === "after"
+                      ? "After"
+                      : "Change",
+                  ]}
+                />
+                <Area
+                  type="monotone"
+                  dataKey="before"
+                  stackId="1"
+                  stroke="#ef4444"
+                  fill="#ef4444"
+                  fillOpacity={0.6}
+                />
+                <Area
+                  type="monotone"
+                  dataKey="after"
+                  stackId="2"
+                  stroke="#10b981"
+                  fill="#10b981"
+                  fillOpacity={0.6}
+                />
+              </AreaChart>
+            </ResponsiveContainer>
+          </CardContent>
+        </Card>
+
+        <div className="grid grid-cols-2 gap-4">
+          <Card>
+            <CardContent className="p-4">
+              <div className="text-center">
+                <div className="text-2xl font-bold text-green-500">
+                  {change_analysis.vegetation_change_net > 0 ? "+" : ""}
+                  {change_analysis.vegetation_change_net.toFixed(1)}%
+                </div>
+                <div className="text-sm text-muted-foreground">
+                  Net Vegetation Change
+                </div>
+              </div>
+            </CardContent>
+          </Card>
+          <Card>
+            <CardContent className="p-4">
+              <div className="text-center">
+                <div className="text-2xl font-bold text-blue-500">
+                  {change_analysis.total_change_percentage.toFixed(1)}%
+                </div>
+                <div className="text-sm text-muted-foreground">
+                  Total Change
+                </div>
+              </div>
+            </CardContent>
+          </Card>
+        </div>
+
+        <Card>
+          <CardHeader>
+            <CardTitle className="flex items-center space-x-2">
+              <CheckCircle className="h-5 w-5 text-purple-500" />
+              <span>AI Recommendations</span>
+            </CardTitle>
+          </CardHeader>
+          <CardContent>
+            <div className="space-y-2">
+              {ndviData.recommendations.map((rec, index) => (
+                <div
+                  key={index}
+                  className="flex items-start gap-2 p-2 rounded bg-muted/30"
+                >
+                  <div className="w-2 h-2 rounded-full bg-purple-500 mt-2 flex-shrink-0"></div>
+                  <div className="text-sm">{rec}</div>
+                </div>
+              ))}
+            </div>
+          </CardContent>
+        </Card>
+      </div>
+    );
   };
 
-  // NEW: Job polling functionality
-  const startJobPolling = (jobId: string, pollingUrl: string) => {
-    const pollInterval = 2000; // Poll every 2 seconds
-
-    pollingIntervalRef.current = setInterval(async () => {
-      try {
-        const response = await fetch(pollingUrl);
-        if (!response.ok) {
-          throw new Error(`Polling failed: ${response.status}`);
-        }
-
-        const jobStatus: AnalysisJobStatus = await response.json();
-        setCurrentJob(jobStatus);
-
-        if (jobStatus.status === "COMPLETE") {
-          // Analysis completed successfully
-          setIsQuerying(false);
-          if (pollingIntervalRef.current) {
-            clearInterval(pollingIntervalRef.current);
-            pollingIntervalRef.current = null;
-          }
-
-          // Process the results
-          if (jobStatus.data) {
-            const enhancedResult = transformAnalysisResult(jobStatus.data);
-            onAnalysisComplete?.(enhancedResult);
-
-            // Show satellite view if satellite data is available
-            if (enhancedResult.satelliteData) {
-              setShowSatelliteView(true);
-            }
-          }
-        } else if (jobStatus.status === "FAILED") {
-          // Analysis failed
-          setIsQuerying(false);
-          setAnalysisError(jobStatus.error || "Analysis failed");
-          if (pollingIntervalRef.current) {
-            clearInterval(pollingIntervalRef.current);
-            pollingIntervalRef.current = null;
-          }
-        }
-        // Continue polling for PENDING/PROCESSING status
-      } catch (error) {
-        console.error("Polling error:", error);
-        setAnalysisError("Failed to check analysis status");
-        setIsQuerying(false);
-        if (pollingIntervalRef.current) {
-          clearInterval(pollingIntervalRef.current);
-          pollingIntervalRef.current = null;
-        }
-      }
-    }, pollInterval);
-  };
-
-  // NEW: Transform analysis results to enhanced query result format
-  const transformAnalysisResult = (analysisData: any): EnhancedQueryResult => {
-    // Handle different analysis types
-    const analysisType =
-      analysisData.type?.replace("_analysis", "") || "gentrification";
-
-    let polygons: any[] = [];
-    let satelliteData = null;
-    let statistics = null;
-
-    if (analysisData.data?.changePolygons) {
-      // Transform GeoJSON features to MapPolygon format
-      polygons = analysisData.data.changePolygons.features.map(
-        (feature: any, index: number) => ({
-          id: `change_${index}`,
-          coordinates: feature.geometry.coordinates,
-          properties: {
-            name: feature.properties?.name || `Change Area ${index + 1}`,
-            priceChange: feature.properties?.confidence
-              ? Math.round(feature.properties.confidence * 100)
-              : 0,
-            floodRisk: feature.properties?.area
-              ? Math.min(100, feature.properties.area / 1000)
-              : 0,
-            area: feature.properties?.changeType || "detected_change",
-            population: feature.properties?.estimatedPopulation,
-            avgPropertyValue: feature.properties?.avgPropertyValue,
-          },
-        })
-      );
-
-      // Extract satellite imagery data
-      if (analysisData.data.images) {
-        satelliteData = {
-          beforeImage: analysisData.data.images.beforeImage,
-          afterImage: analysisData.data.images.afterImage,
-          overlayImage: analysisData.data.images.overlayImage,
-          maskImage: analysisData.data.images.maskImage,
-          analysisMetadata: analysisData.data.metadata,
-        };
-      }
-
-      // Extract statistics based on analysis type
-      if (analysisType === "deforestation" && analysisData.data.forestLoss) {
-        statistics = {
-          deforestedArea: analysisData.data.forestLoss.deforestedArea,
-          forestLossPercentage:
-            analysisData.data.forestLoss.forestLossPercentage,
-          originalForestArea: analysisData.data.forestStats.originalForestArea,
-          remainingForestArea:
-            analysisData.data.forestStats.remainingForestArea,
-          treeCoverLoss: analysisData.data.forestStats.treeCoverLoss,
-          averageTreeDensityChange:
-            analysisData.data.forestStats.averageTreeDensityChange,
-        };
-      } else if (
-        analysisType === "urbanization" &&
-        analysisData.data.urbanGrowth
-      ) {
-        statistics = {
-          newUrbanArea: analysisData.data.urbanGrowth.newUrbanArea,
-          urbanGrowthPercentage:
-            analysisData.data.urbanGrowth.urbanGrowthPercentage,
-          populationImpact: analysisData.data.populationImpact || {
-            estimatedPopulation: 0,
-            populationDensity: 0,
-            confidence: 0.5,
-          },
-          urbanGrowthMetrics: analysisData.data.urbanGrowthMetrics || {
-            developmentRate: 0,
-            infrastructureExpansion: 0,
-            averageUrbanDensityChange: 0,
-          },
-        };
-      } else if (analysisData.data.statistics) {
-        statistics = analysisData.data.statistics;
-      }
-    } else if (analysisData.data?.polygons) {
-      // Handle existing gentrification analysis format
-      polygons = analysisData.data.polygons;
-    }
-
-    return {
-      polygons,
-      summary: {
-        totalAreas: polygons.length,
-        avgPriceIncrease:
-          polygons.reduce(
-            (sum, p) => sum + (p.properties?.priceChange || 0),
-            0
-          ) / Math.max(1, polygons.length),
-        avgFloodRiskIncrease:
-          polygons.reduce((sum, p) => sum + (p.properties?.floodRisk || 0), 0) /
-          Math.max(1, polygons.length),
-        timeRange: analysisData.intent?.dateRange?.join(" to ") || "2020-2024",
-        totalPopulation: polygons.reduce(
-          (sum, p) => sum + (p.properties?.population || 0),
-          0
-        ),
-      },
-      insights: analysisData.data?.insights || [],
-      city: analysisData.intent?.location || currentCity,
-      dataSource: {
-        propertyData: "Geospatial Analysis",
-        riskData: "Satellite Imagery",
-        boundaryData: "Change Detection",
-      },
-      meta: {
-        queryProcessed: analysisData.intent?.extractedParams?.timeFrame,
-        resultsCount: polygons.length,
-        processingTime: `${Math.round((currentJob?.elapsedTime || 0) / 1000)}s`,
-        aiProcessed: true,
-        geminiUsed: true,
-      },
-      satelliteData,
-      analysisType: analysisType as any,
-      statistics,
-    };
-  };
-
-  // Cleanup polling on unmount
+  // Effect to handle NDVI data from external query results
   useEffect(() => {
-    return () => {
-      if (pollingIntervalRef.current) {
-        clearInterval(pollingIntervalRef.current);
+    if (
+      externalQueryResult?.statistics &&
+      "ndviData" in externalQueryResult.statistics
+    ) {
+      const ndviResult = (externalQueryResult.statistics as any).ndviData;
+      if (ndviResult) {
+        setNdviData(ndviResult);
+        setShowNdviCharts(true);
       }
-    };
-  }, []);
+    } else {
+      setShowNdviCharts(false);
+    }
+  }, [externalQueryResult]);
 
-  // State for base map data
-  const [baseMapData, setBaseMapData] = useState<
-    Array<{
-      type: "Feature";
-      geometry: {
-        type: "Polygon";
-        coordinates: number[][][];
-      };
-      properties: {
-        name: string;
-        priceChange: number;
-        floodRisk: number;
-        area: string;
-        ward: string;
-        city: string;
-        population?: number;
-        avgPropertyValue?: string;
-      };
-    }>
-  >([]);
+  // Base map data loading and processing
+  const [baseMapData, setBaseMapData] = useState<MapFeature[]>([]);
 
-  // Load base map data when city changes
   useEffect(() => {
     const loadBaseMapData = async () => {
       try {
-        // Skip loading base map data since cities are specified dynamically
-        // Users will get data from their chat queries instead
         setBaseMapData([]);
       } catch (error) {
         console.error("Failed to load base map data:", error);
@@ -353,7 +466,6 @@ export default function MapInterface({
       displayQueryResult?.polygons &&
       displayQueryResult.polygons.length > 0
     ) {
-      // Calculate bounds from polygon coordinates
       let minLng = Infinity,
         minLat = Infinity,
         maxLng = -Infinity,
@@ -369,34 +481,113 @@ export default function MapInterface({
         });
       });
 
-      const bounds = new LatLngBounds([minLat, minLng], [maxLat, maxLng]);
-      setMapBounds(bounds);
+      if (minLng !== Infinity) {
+        const bounds = new LatLngBounds([minLat, minLng], [maxLat, maxLng]);
+        setMapBounds(bounds);
+
+        setViewState({
+          center: [(minLat + maxLat) / 2, (minLng + maxLng) / 2],
+          zoom: 10,
+        });
+      }
     }
   }, [displayQueryResult]);
 
-  // Generate map data from query results or use base map data
-  const mapData = displayQueryResult
-    ? {
-        type: "FeatureCollection" as const,
-        features: displayQueryResult.polygons.map((polygon) => ({
-          type: "Feature" as const,
-          geometry: {
-            type: "Polygon" as const,
-            coordinates: polygon.coordinates,
-          },
-          properties: polygon.properties,
-        })),
-      }
-    : {
-        type: "FeatureCollection" as const,
-        features: baseMapData,
+  // Transform analysis result
+  const transformAnalysisResult = (data: AnalysisData): EnhancedQueryResult => {
+    if (data.type === "gentrification_analysis") {
+      return {
+        polygons:
+          data.data?.results?.map((result, index) => ({
+            id: `result_${index}`,
+            coordinates: [
+              [
+                [73.8567 + index * 0.01, 18.5204 + index * 0.01],
+                [73.8667 + index * 0.01, 18.5204 + index * 0.01],
+                [73.8667 + index * 0.01, 18.5304 + index * 0.01],
+                [73.8567 + index * 0.01, 18.5304 + index * 0.01],
+                [73.8567 + index * 0.01, 18.5204 + index * 0.01],
+              ],
+            ],
+            properties: {
+              name: result.ward || `Area ${index + 1}`,
+              priceChange: result.priceChangePercent || 0,
+              floodRisk: result.currentRiskLevel || 0,
+              area: result.ward || "Unknown",
+              population: result.population || 0,
+              avgPropertyValue: result.avgPropertyValue || "N/A",
+            },
+          })) || [],
+        summary: data.data?.summary || {
+          totalAreas: 0,
+          avgPriceIncrease: 0,
+          avgFloodRiskIncrease: 0,
+          timeRange: "Unknown",
+        },
+        insights: data.data?.insights || [],
+        city: data.data?.city || "Unknown",
+        dataSource: data.data?.sources || {
+          propertyData: "Unknown",
+          riskData: "Unknown",
+          boundaryData: "Unknown",
+        },
+        meta: data.data?.meta || {
+          queryProcessed: "Unknown",
+          resultsCount: 0,
+          processingTime: "0s",
+          aiProcessed: false,
+          geminiUsed: false,
+        },
       };
+    }
 
-  const handleTimeChange = useCallback((newTime: number[]) => {
-    setTimeRange(newTime);
-  }, []);
+    return {
+      polygons: [],
+      summary: {
+        totalAreas: 0,
+        avgPriceIncrease: 0,
+        avgFloodRiskIncrease: 0,
+        timeRange: "Unknown",
+      },
+      insights: ["Analysis completed but no data available"],
+      city: "Unknown",
+      dataSource: {
+        propertyData: "Unknown",
+        riskData: "Unknown",
+        boundaryData: "Unknown",
+      },
+      meta: {
+        queryProcessed: "Unknown",
+        resultsCount: 0,
+        processingTime: "0s",
+        aiProcessed: false,
+        geminiUsed: false,
+      },
+    };
+  };
 
-  // Style function for property heatmap with enhanced highlighting
+  // Create GeoJSON from base map data
+  const mapData =
+    baseMapData.length > 0
+      ? {
+          type: "FeatureCollection" as const,
+          features: baseMapData,
+        }
+      : displayQueryResult?.polygons
+      ? {
+          type: "FeatureCollection" as const,
+          features: displayQueryResult.polygons.map((polygon) => ({
+            type: "Feature" as const,
+            geometry: {
+              type: "Polygon" as const,
+              coordinates: polygon.coordinates,
+            },
+            properties: polygon.properties,
+          })),
+        }
+      : null;
+
+  // Style functions for map layers
   const getPropertyHeatmapStyle = (feature?: {
     properties?: { priceChange?: number; name?: string };
   }) => {
@@ -417,12 +608,10 @@ export default function MapInterface({
     else if (priceChange >= 30) color = "#c6dbef";
     else if (priceChange >= 20) color = "#deebf7";
 
-    // Enhanced highlighting for search results
     if (isHighlighted) {
       borderColor = "#ff4444";
       borderWidth = 4;
       fillOpacity = 0.9;
-      // Add a glow effect
       return {
         fillColor: color,
         fillOpacity: fillOpacity,
@@ -443,7 +632,6 @@ export default function MapInterface({
     };
   };
 
-  // Style function for climate risk overlay with enhanced highlighting
   const getClimateRiskStyle = (feature?: {
     properties?: { floodRisk?: number; name?: string };
   }) => {
@@ -458,7 +646,6 @@ export default function MapInterface({
     if (floodRisk >= 50) color = "rgba(255, 0, 0, 0.5)";
     else if (floodRisk >= 25) color = "rgba(255, 165, 0, 0.3)";
 
-    // Enhanced highlighting for search results
     if (isHighlighted) {
       return {
         fillColor: "rgba(255, 68, 68, 0.6)",
@@ -520,7 +707,7 @@ export default function MapInterface({
     }
   };
 
-  // NEW: Progress indicator for analysis
+  // Progress indicator for analysis
   const renderAnalysisProgress = () => {
     if (!isQuerying && !currentJob) return null;
 
@@ -543,7 +730,8 @@ export default function MapInterface({
     const getStatusColor = () => {
       if (analysisError) return "text-red-500";
       if (currentJob?.status === "COMPLETE") return "text-green-500";
-      return "text-blue-500";
+      if (currentJob?.status === "PROCESSING") return "text-blue-500";
+      return "text-yellow-500";
     };
 
     const getStatusIcon = () => {
@@ -551,45 +739,37 @@ export default function MapInterface({
         return <AlertCircle className="h-4 w-4 text-red-500" />;
       if (currentJob?.status === "COMPLETE")
         return <CheckCircle className="h-4 w-4 text-green-500" />;
-      return <Loader2 className="h-4 w-4 animate-spin text-blue-500" />;
+      if (currentJob?.status === "PROCESSING")
+        return <Loader2 className="h-4 w-4 animate-spin text-blue-500" />;
+      return <Loader2 className="h-4 w-4 animate-spin text-yellow-500" />;
     };
 
     return (
-      <Card className="absolute top-20 left-4 right-4 z-10 bg-card/90 backdrop-blur-md">
-        <CardContent className="p-4">
-          <div className="flex items-center gap-3">
+      <Card className="bg-card/90 backdrop-blur-md">
+        <CardContent className="p-4 space-y-3">
+          <div className="flex items-center space-x-2">
             {getStatusIcon()}
-            <div className="flex-1">
-              <div className={cn("text-sm font-medium", getStatusColor())}>
-                {analysisError
-                  ? "Analysis Failed"
-                  : currentJob?.progress || "Starting analysis..."}
-              </div>
-              {analysisError && (
-                <div className="text-xs text-red-400 mt-1">{analysisError}</div>
-              )}
-              {currentJob?.elapsedTime && (
-                <div className="text-xs text-muted-foreground mt-1">
-                  Elapsed: {Math.round(currentJob.elapsedTime / 1000)}s
-                </div>
-              )}
-            </div>
+            <span className={cn("text-sm font-medium", getStatusColor())}>
+              {analysisError
+                ? "Analysis Failed"
+                : currentJob?.status || "Starting..."}
+            </span>
           </div>
-          {!analysisError && (
-            <Progress value={getProgressValue()} className="mt-3 h-2" />
-          )}
+          <div className="space-y-2">
+            <div className="flex justify-between text-xs text-muted-foreground">
+              <span>
+                {analysisError || currentJob?.progress || "Initializing..."}
+              </span>
+              <span>
+                {currentJob?.elapsedTime
+                  ? `${Math.round(currentJob.elapsedTime / 1000)}s`
+                  : ""}
+              </span>
+            </div>
+            <Progress value={getProgressValue()} className="h-2" />
+          </div>
           {analysisError && (
-            <Button
-              variant="outline"
-              size="sm"
-              className="mt-3"
-              onClick={() => {
-                setAnalysisError(null);
-                setCurrentJob(null);
-              }}
-            >
-              Dismiss
-            </Button>
+            <div className="text-xs text-red-500 mt-2">{analysisError}</div>
           )}
         </CardContent>
       </Card>
@@ -603,51 +783,24 @@ export default function MapInterface({
         className
       )}
     >
-      {/* Analysis Progress Indicator */}
-      {renderAnalysisProgress()}
-
-      {/* NEW: Satellite View Toggle */}
-      {displayQueryResult?.satelliteData && (
-        <div className="absolute top-4 right-4 z-10">
-          <Button
-            variant={showSatelliteView ? "default" : "outline"}
-            size="sm"
-            onClick={() => setShowSatelliteView(!showSatelliteView)}
-            className="bg-card/70 backdrop-blur-md"
-          >
-            {showSatelliteView ? "Hide Satellite" : "Show Satellite"}
-          </Button>
+      {/* NDVI Charts Overlay - Show when NDVI data is available */}
+      {showNdviCharts && (
+        <div className="absolute top-4 right-4 z-20 w-96 max-h-[90vh] overflow-y-auto">
+          {renderNDVICharts()}
         </div>
       )}
 
-      {/* NEW: Satellite Image Viewer */}
-      {showSatelliteView && displayQueryResult?.satelliteData && (
-        <div className="absolute top-16 right-4 z-10 w-96 max-h-[80vh] overflow-y-auto">
-          <SatelliteImageViewer
-            satelliteData={displayQueryResult.satelliteData}
-            className="bg-card/90 backdrop-blur-md"
-          />
+      {/* Analysis Progress */}
+      {(isQuerying || currentJob) && (
+        <div className="absolute top-4 left-1/2 transform -translate-x-1/2 z-10 w-80">
+          {renderAnalysisProgress()}
         </div>
       )}
 
-      {/* NEW: Statistics Panel */}
-      {displayQueryResult?.statistics && displayQueryResult?.analysisType && (
-        <div className="absolute bottom-4 right-4 z-10 w-80 max-h-[60vh] overflow-y-auto">
-          <ChangeDetectionStatsComponent
-            statistics={displayQueryResult.statistics}
-            analysisType={displayQueryResult.analysisType}
-            className="bg-card/90 backdrop-blur-md"
-          />
-        </div>
-      )}
-
-      {/* Layer Controls Only - No City Selector */}
+      {/* Layer Controls */}
       <div className="absolute top-4 left-4 z-10">
         <Card className="bg-card/70 backdrop-blur-md shadow-md border border-border/30">
           <CardContent className="p-2">
-            {/* Removed City Selector - Users specify cities via chat */}
-
-            {/* Layer Toggles */}
             <div className="space-y-1">
               <label className="flex items-center space-x-1.5 text-xs text-foreground cursor-pointer">
                 <input
@@ -733,6 +886,34 @@ export default function MapInterface({
           />
         )}
       </MapContainer>
+
+      {/* Satellite Image Viewer */}
+      {showSatelliteView && displayQueryResult?.satelliteData && (
+        <div className="absolute top-16 right-4 z-10 w-96 max-h-[80vh] overflow-y-auto">
+          <SatelliteImageViewer
+            satelliteData={displayQueryResult.satelliteData}
+            className="bg-card/90 backdrop-blur-md"
+          />
+        </div>
+      )}
+
+      {/* Statistics Panel */}
+      {displayQueryResult?.statistics &&
+        displayQueryResult?.analysisType &&
+        !showNdviCharts && (
+          <div className="absolute bottom-4 right-4 z-10 w-80 max-h-[60vh] overflow-y-auto">
+            <ChangeDetectionStatsComponent
+              statistics={displayQueryResult.statistics}
+              analysisType={
+                displayQueryResult.analysisType as
+                  | "urbanization"
+                  | "deforestation"
+                  | "change_detection"
+              }
+              className="bg-card/90 backdrop-blur-md"
+            />
+          </div>
+        )}
     </div>
   );
 }

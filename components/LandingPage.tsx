@@ -77,8 +77,8 @@ export default function LandingPage({
           </div>
 
           <p className=" text-muted-foreground max-w-2xl mx-auto leading-relaxed">
-            Ask anything about property insights, climate risks, and market
-            trends. Get intelligent analysis powered by advanced AI.
+            Analyze vegetation changes, deforestation, and urban development
+            using satellite imagery and NDVI analysis.
           </p>
         </motion.div>
 
@@ -98,7 +98,7 @@ export default function LandingPage({
             <div className="flex items-end gap-2 p-2">
               <div className="flex-1">
                 <PromptInputTextarea
-                  placeholder="Show wards in Pune where property values rose >30% and flood risk increased since 2015..."
+                  placeholder="Analyze NDVI vegetation changes in Mumbai from 2020 to 2024..."
                   className="text-base resize-none border-none bg-transparent placeholder:text-muted-foreground/60 focus:ring-0"
                   maxLength={500}
                 />
@@ -131,10 +131,10 @@ export default function LandingPage({
 
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             {[
-              "Find areas with high property appreciation and low climate risk",
-              "Compare flood risk trends across different Mumbai wards",
-              "Show me the most resilient neighborhoods for investment",
-              "Identify emerging hotspots with growing property values",
+              "Show NDVI vegetation changes in Mumbai from 2020 to 2024",
+              "Analyze deforestation patterns in Amazon rainforest since 2020",
+              "Detect urban expansion in Bangalore using satellite imagery",
+              "Monitor forest cover changes in Delhi NCR region",
             ].map((example, index) => (
               <motion.button
                 key={index}

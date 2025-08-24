@@ -142,7 +142,13 @@ export interface EnhancedQueryResult {
     | "urbanization"
     | "change_detection"
     | "gentrification";
-  statistics?: ChangeDetectionStats | DeforestationStats | UrbanizationStats;
+  statistics?: (
+    | ChangeDetectionStats
+    | DeforestationStats
+    | UrbanizationStats
+  ) & {
+    ndviData?: any; // Allow NDVI data to be attached to any statistics type
+  };
 }
 
 // City-specific configurations

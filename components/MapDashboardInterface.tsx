@@ -3,10 +3,11 @@
 import React, { useState } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { Map, BarChart3, Activity, MapPin } from "lucide-react";
+import { Map, BarChart3, Activity, MapPin, Leaf } from "lucide-react";
 import { cn } from "@/lib/utils";
 import MapInterface from "./MapInterface";
 import Dashboard from "./Dashboard";
+import NDVIDashboard from "./NDVIDashboard";
 import type { EnhancedQueryResult } from "@/lib/types";
 
 interface MapDashboardInterfaceProps {
@@ -18,19 +19,27 @@ export default function MapDashboardInterface({
   queryResult,
   className,
 }: MapDashboardInterfaceProps) {
-  const [activeTab, setActiveTab] = useState<"map" | "dashboard">("map");
+  const [activeTab, setActiveTab] = useState<"map" | "dashboard" | "ndvi">(
+    "map"
+  );
+
+  // Extract NDVI data from query result
+  const ndviData = queryResult?.statistics?.ndviData || null;
+  const hasNdviData = Boolean(ndviData);
 
   return (
     <div className={cn("w-full h-full bg-background", className)}>
       <Tabs
         value={activeTab}
-        onValueChange={(value) => setActiveTab(value as "map" | "dashboard")}
+        onValueChange={(value) =>
+          setActiveTab(value as "map" | "dashboard" | "ndvi")
+        }
         className="w-full h-full flex flex-col"
       >
         {/* Tab Navigation */}
         <div className="flex-shrink-0 border-b border-border/50 bg-card/30 backdrop-blur-sm">
           <div className="px-6 py-[22px] flex items-center">
-            <TabsList className="grid w-full max-w-md grid-cols-2 bg-card/30 border border-border/50">
+            <TabsList className="grid w-full max-w-lg grid-cols-3 bg-card/30 border border-border/50">
               <TabsTrigger
                 value="map"
                 className="flex items-center space-x-2 data-[state=active]:bg-background data-[state=active]:shadow-sm transition-all duration-200"
@@ -45,10 +54,18 @@ export default function MapDashboardInterface({
                 <BarChart3 className="h-4 w-4" />
                 <span className="font-medium">Analytics</span>
               </TabsTrigger>
+              <TabsTrigger
+                value="ndvi"
+                className="flex items-center space-x-2 data-[state=active]:bg-background data-[state=active]:shadow-sm transition-all duration-200"
+                disabled={!hasNdviData}
+              >
+                <Leaf className="h-4 w-4" />
+                <span className="font-medium">NDVI</span>
+              </TabsTrigger>
             </TabsList>
 
             {/* Tab Status Indicators */}
-            <div className=" flex items-center space-x-4 text-sm text-muted-foreground">
+            <div className="ml-6 flex items-center space-x-4 text-sm text-muted-foreground">
               <div className="flex items-center space-x-2">
                 <div
                   className={cn(
@@ -67,9 +84,17 @@ export default function MapDashboardInterface({
                 <span>
                   {activeTab === "map"
                     ? "Interactive mapping"
-                    : "Live analytics"}
+                    : activeTab === "dashboard"
+                    ? "Live analytics"
+                    : "NDVI analysis"}
                 </span>
               </div>
+              {hasNdviData && (
+                <div className="flex items-center space-x-2">
+                  <Leaf className="h-3 w-3 text-green-500" />
+                  <span>NDVI data available</span>
+                </div>
+              )}
             </div>
           </div>
         </div>
@@ -110,6 +135,23 @@ export default function MapDashboardInterface({
                 <Dashboard queryResult={queryResult} className="h-full" />
               </motion.div>
             </TabsContent>
+
+            <TabsContent
+              key="ndvi-tab"
+              value="ndvi"
+              className="h-full m-0 focus-visible:outline-none"
+            >
+              <motion.div
+                key="ndvi-content"
+                initial={{ opacity: 0, y: 20 }}
+                animate={{ opacity: 1, y: 0 }}
+                exit={{ opacity: 0, y: 20 }}
+                transition={{ duration: 0.3, ease: "easeInOut" }}
+                className="h-full"
+              >
+                <NDVIDashboard ndviData={ndviData} className="h-full" />
+              </motion.div>
+            </TabsContent>
           </AnimatePresence>
         </div>
       </Tabs>
@@ -124,14 +166,28 @@ export default function MapDashboardInterface({
         <motion.button
           whileHover={{ scale: 1.1 }}
           whileTap={{ scale: 0.9 }}
-          onClick={() =>
-            setActiveTab(activeTab === "map" ? "dashboard" : "map")
-          }
+          onClick={() => {
+            if (activeTab === "map") {
+              setActiveTab("dashboard");
+            } else if (activeTab === "dashboard" && hasNdviData) {
+              setActiveTab("ndvi");
+            } else {
+              setActiveTab("map");
+            }
+          }}
           className="bg-primary text-primary-foreground rounded-full p-3 shadow-lg hover:shadow-xl transition-all duration-200 border border-border/20"
-          title={`Switch to ${activeTab === "map" ? "Dashboard" : "Map"} View`}
+          title={`Switch to ${
+            activeTab === "map"
+              ? "Dashboard"
+              : activeTab === "dashboard" && hasNdviData
+              ? "NDVI"
+              : "Map"
+          } View`}
         >
           {activeTab === "map" ? (
             <BarChart3 className="h-5 w-5" />
+          ) : activeTab === "dashboard" && hasNdviData ? (
+            <Leaf className="h-5 w-5" />
           ) : (
             <MapPin className="h-5 w-5" />
           )}

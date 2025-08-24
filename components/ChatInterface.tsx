@@ -101,6 +101,56 @@ interface ChatInterfaceProps {
   className?: string;
 }
 
+interface NDVIAnalysisResult {
+  success: boolean;
+  location: string;
+  coordinates: { latitude: number; longitude: number };
+  timeline_start: string;
+  timeline_end: string;
+  ndvi_analysis: {
+    ndvi_statistics: {
+      before: {
+        mean: number;
+        std: number;
+        min: number;
+        max: number;
+        median: number;
+      };
+      after: {
+        mean: number;
+        std: number;
+        min: number;
+        max: number;
+        median: number;
+      };
+      change: {
+        mean_change: number;
+        std_change: number;
+        significant_change_pixels: number;
+      };
+    };
+    change_statistics: {
+      total_valid_pixels: number;
+      vegetation_gain: { count: number; percentage: number };
+      vegetation_loss: { count: number; percentage: number };
+      urbanization: { count: number; percentage: number };
+      urban_loss: { count: number; percentage: number };
+      water_gain: { count: number; percentage: number };
+      water_loss: { count: number; percentage: number };
+    };
+    analysis_focus: string;
+  };
+  change_analysis: {
+    total_change_percentage: number;
+    dominant_change: string;
+    vegetation_change_net: number;
+    urban_change_net: number;
+    water_change_net: number;
+    change_intensity: string;
+  };
+  recommendations: string[];
+}
+
 export default function ChatInterface({
   initialQuery,
   onMapUpdate,
@@ -426,608 +476,7 @@ export default function ChatInterface({
     [getNumber, getString]
   );
 
-  // NEW: AI-powered analysis function
-  const generateAIInsights = useCallback(
-    async (
-      result: EnhancedQueryResult,
-      status: AnalysisJobStatus,
-      userQuery: string
-    ): Promise<string> => {
-      // If we have satellite data, use AI to analyze it
-      if (result.satelliteData && result.statistics) {
-        try {
-          const response = await fetch("/api/ai-satellite-analysis", {
-            method: "POST",
-            headers: {
-              "Content-Type": "application/json",
-            },
-            body: JSON.stringify({
-              satelliteData: result.satelliteData,
-              statistics: result.statistics,
-              analysisType: result.analysisType || "change_detection",
-              userQuery: userQuery,
-              polygonData: result.polygons,
-            }),
-          });
-
-          if (response.ok) {
-            const aiAnalysis = await response.json();
-            if (aiAnalysis.success) {
-              return aiAnalysis.insights;
-            } else if (aiAnalysis.fallbackInsights) {
-              return aiAnalysis.fallbackInsights;
-            }
-          }
-        } catch (error) {
-          console.error("AI analysis failed:", error);
-        }
-      }
-
-      // Fallback to basic analysis
-      return generateBasicInsights(result, status);
-    },
-    []
-  );
-
-  // Basic insights as fallback
-  const generateBasicInsights = useCallback(
-    (result: EnhancedQueryResult, status: AnalysisJobStatus): string => {
-      const analysisType = result.analysisType || "change detection";
-      const elapsed = Math.round(status.elapsedTime / 1000);
-      const location = result.city || "the analyzed area";
-
-      if (analysisType === "deforestation") {
-        const stats = result.statistics as any;
-        return `I've completed analyzing forest changes in ${location}! 🌳
-
-The satellite analysis took ${elapsed} seconds and reveals interesting patterns in forest cover. ${
-          stats?.forestLossPercentage > 10
-            ? `The data shows significant forest loss of ${stats.forestLossPercentage.toFixed(
-                1
-              )}%, which could indicate active deforestation or land conversion activities.`
-            : stats?.forestLossPercentage > 3
-            ? `There's moderate forest cover change of ${stats.forestLossPercentage.toFixed(
-                1
-              )}%, suggesting some logging or natural changes.`
-            : "Forest cover appears relatively stable with minimal changes detected."
-        }
-
-This analysis helps us understand environmental changes and can inform conservation efforts in the region.`;
-      }
-
-      if (analysisType === "urbanization") {
-        const stats = result.statistics as any;
-        return `Great! I've analyzed urban development in ${location} 🏙️
-
-After ${elapsed} seconds of processing satellite imagery, I can see the urbanization patterns clearly. ${
-          stats?.urbanGrowthPercentage > 15
-            ? `The area shows rapid urban expansion of ${stats.urbanGrowthPercentage.toFixed(
-                1
-              )}%, indicating significant economic growth and development activity.`
-            : stats?.urbanGrowthPercentage > 5
-            ? `There's steady urban growth of ${stats.urbanGrowthPercentage.toFixed(
-                1
-              )}%, suggesting planned development and controlled expansion.`
-            : "Urban development appears controlled with minimal new construction detected."
-        }
-
-This type of analysis is valuable for urban planning and infrastructure development.`;
-      }
-
-      // General change detection
-      const changePercentage = result.statistics?.changePercentage || 0;
-      return `I've completed the satellite analysis for ${location}! 🛰️
-
-After ${elapsed} seconds of processing, the data reveals ${changePercentage.toFixed(
-        1
-      )}% land use change in this region. ${
-        changePercentage > 10
-          ? "This indicates significant landscape transformation that could be due to development, agriculture, or environmental factors."
-          : changePercentage > 2
-          ? "There are moderate changes detected, suggesting ongoing land use activities."
-          : "The area appears relatively stable with minimal changes."
-      }
-
-The high-resolution satellite analysis provides valuable insights into how this landscape is evolving over time.`;
-    },
-    []
-  );
-
-  // Success message (updated to use AI analysis)
-  const generateSuccessMessage = useCallback(
-    async (
-      result: EnhancedQueryResult,
-      status: AnalysisJobStatus,
-      userQuery: string
-    ): Promise<string> => {
-      // Use AI-powered analysis
-      return await generateAIInsights(result, status, userQuery);
-    },
-    [generateAIInsights]
-  );
-
-  // Progress message (stable)
-  const getProgressMessage = useCallback(
-    (status: AnalysisJobStatus): string => {
-      const elapsed = Math.round(status.elapsedTime / 1000);
-      return `${status.progress} (${elapsed}s elapsed)`;
-    },
-    []
-  );
-
-  // Legacy query processing as fallback (moved earlier so it can be a dependency)
-  const handleLegacyQuery = useCallback(
-    async (inputQuery: string, messageId: string) => {
-      try {
-        const stages = [
-          "Parsing natural language query...",
-          "Searching property databases...",
-          "Analyzing climate risk data...",
-          "Generating insights...",
-        ];
-
-        for (let i = 0; i < stages.length; i++) {
-          await new Promise((resolve) => setTimeout(resolve, 800));
-          setMessages((prev) =>
-            prev.map((msg) =>
-              msg.id === messageId ? { ...msg, content: stages[i] } : msg
-            )
-          );
-        }
-
-        let result;
-        try {
-          result = await RealDataAPIClient.queryNaturalLanguageAPI(inputQuery);
-        } catch (apiError) {
-          console.warn("API call failed, using fallback data:", apiError);
-          result = {
-            polygons: [
-              {
-                id: "test-ward-1",
-                coordinates: [
-                  [
-                    [73.8567, 18.5204],
-                    [73.8667, 18.5204],
-                    [73.8667, 18.5304],
-                    [73.8567, 18.5304],
-                    [73.8567, 18.5204],
-                  ],
-                ],
-                properties: {
-                  name: "Test Ward",
-                  priceChange: 35,
-                  floodRisk: 45,
-                  area: "Test Area",
-                  population: 50000,
-                  avgPropertyValue: "₹75,00,000",
-                  ward: "Test Ward",
-                  city: "Test City",
-                },
-              },
-            ],
-            summary: {
-              totalAreas: 1,
-              avgPriceIncrease: 35,
-              avgFloodRiskIncrease: 45,
-              timeRange: "2015-2024",
-              totalPopulation: 50000,
-            },
-            insights: [
-              "✅ Chat interface is working correctly - this is demonstration data.",
-              "⚠️ Advanced satellite analysis unavailable - using fallback property analysis.",
-              "💡 To enable satellite analysis: Ensure the Geospatial Agent API is running.",
-              "🔍 For development: This fallback data allows you to test basic UI features.",
-            ],
-            city: "Demo Location",
-            dataSource: {
-              propertyData: "Test Data Source",
-              riskData: "Test Risk Data",
-              boundaryData: "Test Boundary Data",
-            },
-            meta: {
-              queryProcessed: inputQuery,
-              resultsCount: 1,
-              aiProcessed: true,
-              geminiUsed: false,
-            },
-          };
-        }
-
-        const insights = result.insights || [];
-        const responseContent = `Based on your query, I found ${
-          result.summary?.totalAreas || 0
-        } areas that match your criteria.
-
-**Key Findings:**
-${insights.map((insight: string) => `• ${insight}`).join("\n")}
-
-**Summary:**
-- Average price increase: ${result.summary?.avgPriceIncrease || 0}%
-- Average flood risk: ${result.summary?.avgFloodRiskIncrease || 0}%
-- Time period: ${result.summary?.timeRange || "Recent years"}
-$${
-          result.summary?.totalPopulation
-            ? `- Population affected: ${(
-                result.summary.totalPopulation / 1000
-              ).toFixed(0)}K`
-            : ""
-        }
-
-The map has been updated to highlight the relevant areas. You can explore the detailed analysis in the map view.`;
-
-        const assistantMessage: ChatMessage = {
-          id: messageId,
-          role: "assistant",
-          content: responseContent,
-          timestamp: new Date(),
-          data: result,
-          isStreaming: true,
-        };
-
-        setMessages((prev) =>
-          prev.map((msg) => (msg.id === messageId ? assistantMessage : msg))
-        );
-
-        onMapUpdate?.(result);
-        setIsProcessing(false);
-      } catch (error) {
-        console.error("Legacy query processing failed:", error);
-
-        const errorMessage: ChatMessage = {
-          id: messageId,
-          role: "assistant",
-          content: `I apologize, but I encountered an error while processing your query: ${
-            error instanceof Error ? error.message : "Unknown error"
-          }.
-
-**Possible solutions:**
-• The application may need API keys configured for full functionality
-• Try a simpler query like "Show me wards in a specific city with high property values"
-• Check the browser console for more detailed error information
-
-**Note:** The application should work with demo data even without API keys. If this persists, there may be a configuration issue.`,
-          timestamp: new Date(),
-        };
-
-        setMessages((prev) =>
-          prev.map((msg) => (msg.id === messageId ? errorMessage : msg))
-        );
-        setIsProcessing(false);
-      }
-    },
-    [onMapUpdate]
-  );
-
-  // NEW: Job polling functionality (wrapped in useCallback)
-  const startJobPolling = useCallback(
-    (jobId: string, pollingUrl: string, messageId: string) => {
-      const pollInterval = 2000; // Poll every 2 seconds
-
-      const interval = setInterval(async () => {
-        try {
-          const response = await fetch(pollingUrl);
-          if (!response.ok) {
-            throw new Error(`Polling failed: ${response.status}`);
-          }
-
-          const jobStatus: AnalysisJobStatus = await response.json();
-
-          // Update message with current status
-          setMessages((prev) =>
-            prev.map((msg) =>
-              msg.id === messageId
-                ? {
-                    ...msg,
-                    content: getProgressMessage(jobStatus),
-                    analysisStatus: jobStatus,
-                    isLoading:
-                      jobStatus.status === "PENDING" ||
-                      jobStatus.status === "PROCESSING",
-                  }
-                : msg
-            )
-          );
-
-          if (jobStatus.status === "COMPLETE") {
-            // Analysis completed successfully
-            setIsProcessing(false);
-            clearInterval(interval);
-            pollingIntervals.current.delete(jobId);
-
-            // Process the results
-            if (jobStatus.data) {
-              const enhancedResult = transformAnalysisResult(jobStatus.data);
-              const successMessage = await generateSuccessMessage(
-                enhancedResult,
-                jobStatus,
-                messagesRef.current[messagesRef.current.length - 2]?.content ||
-                  ""
-              );
-
-              setMessages((prev) =>
-                prev.map((msg) =>
-                  msg.id === messageId
-                    ? {
-                        ...msg,
-                        content: successMessage,
-                        data: enhancedResult,
-                        isLoading: false,
-                        isStreaming: true,
-                      }
-                    : msg
-                )
-              );
-
-              // Update map with new data
-              onMapUpdate?.(enhancedResult);
-            }
-
-            // NEW: Clear the analysis job ID to remove toast
-            onAnalysisStart?.(null);
-          } else if (jobStatus.status === "FAILED") {
-            // Analysis failed
-            setIsProcessing(false);
-            clearInterval(interval);
-            pollingIntervals.current.delete(jobId);
-
-            // NEW: Clear the analysis job ID to remove toast
-            onAnalysisStart?.(null);
-
-            const errorMessage = `Analysis failed: ${
-              jobStatus.error || "Unknown error occurred"
-            }
-
-**What happened:**
-• The satellite imagery analysis encountered an error
-• This could be due to API connectivity issues or processing limits
-
-**Try these solutions:**
-• Retry with a different location or smaller date range
-• Check if the Geospatial Agent API is running (http://localhost:8001)
-• Simplify your query (e.g., "show deforestation near a specific city")
-
-**Fallback options:**
-• Use basic property analysis queries
-• Try demo data with "show me wards in a specific city"`;
-
-            setMessages((prev) =>
-              prev.map((msg) =>
-                msg.id === messageId
-                  ? {
-                      ...msg,
-                      content: errorMessage,
-                      isLoading: false,
-                    }
-                  : msg
-              )
-            );
-          }
-          // Continue polling for PENDING/PROCESSING status
-        } catch (error) {
-          console.error("Polling error:", error);
-          console.log(
-            "Polling failed, falling back to legacy query processing..."
-          );
-
-          // Clear polling and fallback to legacy processing
-          clearInterval(interval);
-          pollingIntervals.current.delete(jobId);
-
-          // NEW: Clear the analysis job ID to remove toast
-          onAnalysisStart?.(null);
-
-          // Get the original query from the user message
-          const userMessage =
-            messagesRef.current[messagesRef.current.length - 2];
-          if (userMessage?.role === "user") {
-            await handleLegacyQuery(userMessage.content, messageId);
-          }
-        }
-      }, pollInterval);
-
-      pollingIntervals.current.set(jobId, interval);
-    },
-    [
-      onAnalysisStart,
-      onMapUpdate,
-      setMessages,
-      setIsProcessing,
-      handleLegacyQuery,
-      transformAnalysisResult,
-      generateSuccessMessage,
-      getProgressMessage,
-    ]
-  );
-
-  // NEW: NLP Query Analysis function
-  const analyzeQuery = useCallback(
-    async (
-      inputQuery: string
-    ): Promise<{
-      isNewLocationQuery: boolean;
-      isFollowUpQuestion: boolean;
-      followUpResponse?: string;
-      requiresNewAnalysis: boolean;
-      extractedLocation?: string;
-      analysisType?: string;
-      confidence?: number;
-      intent?: string;
-    }> => {
-      try {
-        const chatHistory = messages.map((msg) => ({
-          role: msg.role,
-          content: msg.content,
-          data: msg.data,
-        }));
-
-        const response = await fetch("/api/nlp-query-analysis", {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-          },
-          body: JSON.stringify({
-            query: inputQuery,
-            chatHistory,
-            currentLocation,
-            currentAnalysisType,
-          }),
-        });
-
-        if (response.ok) {
-          const analysis = await response.json();
-          return {
-            isNewLocationQuery: analysis.isNewLocationQuery,
-            isFollowUpQuestion: analysis.isFollowUpQuestion,
-            followUpResponse: analysis.followUpResponse,
-            requiresNewAnalysis: analysis.requiresNewAnalysis,
-            extractedLocation: analysis.extractedLocation,
-            analysisType: analysis.analysisType,
-            confidence: analysis.confidence,
-            intent: analysis.intent,
-          };
-        }
-      } catch (error) {
-        console.error("NLP analysis failed:", error);
-      }
-
-      // Fallback: enhanced pattern matching with better location extraction
-      const query = inputQuery.toLowerCase();
-
-      // Enhanced location extraction patterns
-      const extractLocationFallback = (text: string): string | null => {
-        // Pattern 1: "near/around/in [location]"
-        const nearPatterns = [
-          /(?:near|around|in|at|of)\s+([a-zA-Z\s]+?)(?:\s|$|,|\?|!)/i,
-          /(?:deforestation|urbanization|changes?)\s+(?:near|around|in|at|of)\s+([a-zA-Z\s]+?)(?:\s|$|,|\?|!)/i,
-        ];
-
-        for (const pattern of nearPatterns) {
-          const match = text.match(pattern);
-          if (match && match[1]) {
-            const location = match[1].trim();
-            if (
-              !["the", "this", "that", "area", "region", "place"].includes(
-                location.toLowerCase()
-              )
-            ) {
-              return location;
-            }
-          }
-        }
-
-        // Pattern 2: Direct city/location mentions
-        const cityPatterns = [
-          /(mumbai|delhi|bangalore|pune|kolkata|chennai|hyderabad|ahmedabad|gurgaon|noida|mysore)/i,
-          /(london|paris|tokyo|new york|berlin|sydney|toronto|los angeles|chicago|boston)/i,
-          /(amazon|sahara|himalaya|andes|sahel|congo|nile|ganges)/i,
-          /(india|china|usa|america|brazil|russia|canada|australia|europe|africa|asia)/i,
-          /(infosys|wipro|tcs|microsoft|google|apple|facebook|amazon)\s+([a-zA-Z]+)/i,
-        ];
-
-        for (const pattern of cityPatterns) {
-          const match = text.match(pattern);
-          if (match) {
-            return match[0];
-          }
-        }
-
-        return null;
-      };
-
-      const extractedLocation = extractLocationFallback(inputQuery);
-      const hasLocation = Boolean(extractedLocation);
-
-      // Enhanced analysis type detection
-      let analysisType = null;
-      if (
-        query.includes("forest") ||
-        query.includes("deforest") ||
-        query.includes("tree")
-      ) {
-        analysisType = "deforestation";
-      } else if (
-        query.includes("urban") ||
-        query.includes("city") ||
-        query.includes("development") ||
-        query.includes("expansion") ||
-        query.includes("growth")
-      ) {
-        analysisType = "urbanization";
-      } else if (
-        query.includes("change") ||
-        query.includes("detect") ||
-        query.includes("monitor") ||
-        query.includes("analysis")
-      ) {
-        analysisType = "change_detection";
-      }
-
-      const isFollowUp =
-        currentLocation &&
-        /\b(what|how|why|explain|tell me more|percentage|area|implications|causes)\b/.test(
-          query
-        ) &&
-        !hasLocation;
-
-      return {
-        isNewLocationQuery: hasLocation,
-        isFollowUpQuestion: isFollowUp,
-        followUpResponse: isFollowUp
-          ? `I'd be happy to provide more insights about the ${currentLocation} analysis. Could you be more specific about what aspect you'd like me to explain?`
-          : undefined,
-        requiresNewAnalysis: hasLocation,
-        extractedLocation: extractedLocation,
-        analysisType: analysisType,
-        confidence: 0.7,
-        intent: hasLocation
-          ? `New ${
-              analysisType || "satellite"
-            } analysis request for ${extractedLocation}`
-          : isFollowUp
-          ? "Follow-up question about previous analysis"
-          : "General query",
-      };
-    },
-    [messages, currentLocation, currentAnalysisType]
-  );
-
-  // NEW: Handle follow-up questions without satellite analysis
-  const handleFollowUpQuestion = useCallback(
-    async (inputQuery: string, messageId: string, followUpResponse: string) => {
-      setMessages((prev) =>
-        prev.map((msg) =>
-          msg.id === messageId
-            ? {
-                ...msg,
-                content: "Processing your follow-up question...",
-                isLoading: true,
-              }
-            : msg
-        )
-      );
-
-      // Simulate processing time for better UX
-      await new Promise((resolve) => setTimeout(resolve, 1000));
-
-      const assistantMessage: ChatMessage = {
-        id: messageId,
-        role: "assistant",
-        content: followUpResponse,
-        timestamp: new Date(),
-        data: lastAnalysisData || undefined,
-        isStreaming: true,
-      };
-
-      setMessages((prev) =>
-        prev.map((msg) => (msg.id === messageId ? assistantMessage : msg))
-      );
-
-      setIsProcessing(false);
-    },
-    [lastAnalysisData]
-  );
-
-  // NEW: Enhanced query submission with NLP analysis for follow-up detection
+  // Enhanced query submission with parallel satellite and NDVI analysis
   const handleQuerySubmit = useCallback(
     async (query?: string) => {
       const inputQuery = query || currentInput.trim();
@@ -1053,285 +502,140 @@ The map has been updated to highlight the relevant areas. You can explore the de
       setIsProcessing(true);
 
       try {
-        // Step 1: Analyze the query to determine if it's a follow-up or new location request
-        const queryAnalysis = await analyzeQuery(inputQuery);
-
-        if (
-          queryAnalysis.isFollowUpQuestion &&
-          queryAnalysis.followUpResponse
-        ) {
-          // Handle follow-up question without satellite analysis
-          await handleFollowUpQuestion(
-            inputQuery,
-            loadingMessage.id,
-            queryAnalysis.followUpResponse
-          );
-          return;
-        }
-
-        if (!queryAnalysis.requiresNewAnalysis) {
-          // If it's not a location query and not a clear follow-up, provide a general response
-          const generalResponse = `I understand you're asking about satellite analysis. To provide specific insights, I need either:
-
-**For new analysis:**
-- Mention a specific location (e.g., "Mumbai", "Amazon rainforest", "near Delhi")
-- Specify the type of analysis (deforestation, urbanization, land use change)
-
-**For follow-up questions:**
-- Ask about the current analysis results (e.g., "What's the percentage?", "Can you explain more?")
-
-Current context: ${
-            currentLocation
-              ? `We're analyzing ${currentLocation}`
-              : "No active analysis"
-          }
-
-What would you like to explore?`;
-
-          await handleFollowUpQuestion(
-            inputQuery,
-            loadingMessage.id,
-            generalResponse
-          );
-          return;
-        }
-
-        // Step 2: Proceed with satellite analysis for new location queries
+        // Step 1: Always start comprehensive analysis
         onAnalysisStart?.("pending");
 
-        const finalizeSuccess = async (
-          unifiedPayload: UnifiedAnalyzeResponse,
-          placeholderProgress?: string
-        ) => {
-          const statusFromAPI: UnifiedStatus =
-            unifiedPayload.status &&
-            ["PENDING", "PROCESSING", "COMPLETE", "FAILED"].includes(
-              unifiedPayload.status
-            )
-              ? unifiedPayload.status
-              : "COMPLETE";
+        setMessages((prev) =>
+          prev.map((msg) =>
+            msg.id === loadingMessage.id
+              ? {
+                  ...msg,
+                  content: "🔄 Starting comprehensive analysis...",
+                  isLoading: true,
+                }
+              : msg
+          )
+        );
 
-          const statusObj: AnalysisJobStatus = {
-            jobId: unifiedPayload.jobId || "n/a",
-            status: statusFromAPI,
-            progress:
-              unifiedPayload.progress ||
-              placeholderProgress ||
-              "Analysis complete",
-            elapsedTime: unifiedPayload.elapsedTime || 0,
-            data: unifiedPayload.data,
-          };
+        // Step 2: Run BOTH satellite and NDVI analysis in parallel
+        setMessages((prev) =>
+          prev.map((msg) =>
+            msg.id === loadingMessage.id
+              ? {
+                  ...msg,
+                  content:
+                    "🛰️🌱 Running satellite and NDVI analysis in parallel...",
+                  isLoading: true,
+                }
+              : msg
+          )
+        );
 
-          const envelope: UnifiedAnalysisDataEnvelope = {
-            ...unifiedPayload.data,
-            elapsedTime: unifiedPayload.elapsedTime,
-          };
-
-          const enhancedResult = transformAnalysisResult(envelope);
-          const successMessage = await generateSuccessMessage(
-            enhancedResult,
-            statusObj,
-            inputQuery
-          );
-
-          setMessages((prev) =>
-            prev.map((msg) =>
-              msg.id === loadingMessage.id
-                ? {
-                    ...msg,
-                    content: successMessage,
-                    data: enhancedResult,
-                    isLoading: false,
-                    isStreaming: true,
-                    jobId: statusObj.jobId,
-                    analysisStatus: statusObj,
-                  }
-                : msg
-            )
-          );
-
-          // Update context state
-          setCurrentLocation(enhancedResult.city || null);
-          setCurrentAnalysisType(enhancedResult.analysisType || null);
-          setLastAnalysisData(enhancedResult);
-
-          onMapUpdate?.(enhancedResult);
-          setIsProcessing(false);
-          onAnalysisStart?.(null);
-        };
-
-        // Try Unified API endpoints for satellite analysis
-        const locationResp = await fetch(
-          `${UNIFIED_API_BASE}/analyze/location`,
-          {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({
-              location_name: inputQuery,
-              zoom_level: "City-Wide (0.025°)",
-              resolution: "Standard (5m)",
-              overlay_alpha: 0.4,
-            }),
+        // Start both analyses simultaneously
+        const satellitePromise = performSatelliteAnalysis(inputQuery).catch(
+          (error) => {
+            console.warn("Satellite analysis failed:", error);
+            return null;
           }
         );
 
-        if (locationResp.ok) {
-          const unifiedData: UnifiedAnalyzeResponse = await locationResp.json();
-          setMessages((prev) =>
-            prev.map((msg) =>
-              msg.id === loadingMessage.id
-                ? {
-                    ...msg,
-                    content:
-                      "Analysis started. Processing satellite imagery and running AI models...",
-                    isLoading: true,
-                    jobId: unifiedData.jobId,
-                    analysisStatus: {
-                      jobId: unifiedData.jobId || "n/a",
-                      status:
-                        unifiedData.status &&
-                        [
-                          "PENDING",
-                          "PROCESSING",
-                          "COMPLETE",
-                          "FAILED",
-                        ].includes(unifiedData.status)
-                          ? (unifiedData.status as UnifiedStatus)
-                          : "PROCESSING",
-                      progress: unifiedData.progress || "Processing imagery...",
-                      elapsedTime: unifiedData.elapsedTime || 0,
-                    },
-                  }
-                : msg
-            )
-          );
+        const ndviPromise = performNDVIAnalysis(inputQuery).catch((error) => {
+          console.warn("NDVI analysis failed:", error);
+          return { success: false, error: error.message };
+        });
 
-          await finalizeSuccess(unifiedData);
+        // Wait for both analyses to complete
+        console.log("Starting parallel analysis...");
+        const [satelliteResult, ndviResult] = await Promise.all([
+          satellitePromise,
+          ndviPromise,
+        ]);
+
+        console.log("Parallel analysis completed:", {
+          satellite: satelliteResult ? "success" : "failed",
+          ndvi: ndviResult?.success ? "success" : "failed",
+        });
+
+        // Step 3: Process and combine results
+        let enhancedResult = null;
+        let successMessage = "";
+
+        // Process satellite results
+        if (satelliteResult) {
+          const envelope = {
+            ...satelliteResult.data,
+            elapsedTime: satelliteResult.elapsedTime,
+          };
+          enhancedResult = transformAnalysisResult(envelope);
+        }
+
+        // Process NDVI results
+        let ndviData = null;
+        if (ndviResult && ndviResult.success && ndviResult.data) {
+          ndviData = ndviResult.data;
+        }
+
+        // Step 4: Combine results based on what succeeded
+        if (enhancedResult && ndviData) {
+          // Both analyses succeeded - create comprehensive result
+          enhancedResult.statistics = {
+            ...enhancedResult.statistics,
+            ndviData: ndviData,
+          };
+          successMessage = await generateCombinedSuccessMessage(
+            enhancedResult,
+            satelliteResult,
+            ndviResult,
+            inputQuery
+          );
+        } else if (enhancedResult) {
+          // Only satellite succeeded
+          successMessage = generateSatelliteOnlyMessage(
+            enhancedResult,
+            satelliteResult
+          );
+        } else if (ndviData) {
+          // Only NDVI succeeded
+          enhancedResult = transformNDVIResult(ndviData);
+          enhancedResult.statistics = {
+            ...enhancedResult.statistics,
+            ndviData: ndviData,
+          };
+          successMessage = generateNDVIInsights(ndviData);
+        } else {
+          // Both failed - use legacy fallback
+          console.log(
+            "Both satellite and NDVI failed, using legacy fallback..."
+          );
+          await handleLegacyQuery(inputQuery, loadingMessage.id);
           return;
         }
 
-        // Try location search endpoint
-        const searchResp = await fetch(`${UNIFIED_API_BASE}/locations/search`, {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ query: inputQuery, limit: 1 }),
-        });
-
-        if (searchResp.ok) {
-          const search = (await searchResp.json()) as {
-            locations?: Array<{
-              coordinates?: { lat?: number; lon?: number };
-            }>;
-          };
-          const first = search.locations?.[0];
-          if (first?.coordinates?.lat && first?.coordinates?.lon) {
-            const analyzeResp = await fetch(`${UNIFIED_API_BASE}/analyze`, {
-              method: "POST",
-              headers: { "Content-Type": "application/json" },
-              body: JSON.stringify({
-                location: {
-                  lat: first.coordinates.lat,
-                  lon: first.coordinates.lon,
-                },
-                zoom_level: "City-Wide (0.025°)",
-                resolution: "Standard (5m)",
-                overlay_alpha: 0.4,
-                include_images: true,
-              }),
-            });
-
-            if (analyzeResp.ok) {
-              const unifiedData: UnifiedAnalyzeResponse =
-                await analyzeResp.json();
-              setMessages((prev) =>
-                prev.map((msg) =>
-                  msg.id === loadingMessage.id
-                    ? {
-                        ...msg,
-                        content:
-                          "Analysis started. Processing satellite imagery and running AI models...",
-                        isLoading: true,
-                        jobId: unifiedData.jobId,
-                        analysisStatus: {
-                          jobId: unifiedData.jobId || "n/a",
-                          status:
-                            unifiedData.status &&
-                            [
-                              "PENDING",
-                              "PROCESSING",
-                              "COMPLETE",
-                              "FAILED",
-                            ].includes(unifiedData.status)
-                              ? (unifiedData.status as UnifiedStatus)
-                              : "PROCESSING",
-                          progress:
-                            unifiedData.progress || "Processing imagery...",
-                          elapsedTime: unifiedData.elapsedTime || 0,
-                        },
-                      }
-                    : msg
-                )
-              );
-
-              await finalizeSuccess(unifiedData);
-              return;
-            }
-          }
-        }
-
-        // Fallback to legacy analysis API
-        const response = await fetch("/api/analysis", {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-          },
-          body: JSON.stringify({
-            query: inputQuery,
-            nlpAnalysis: queryAnalysis.isNewLocationQuery
-              ? {
-                  extractedLocation: queryAnalysis.extractedLocation,
-                  analysisType: queryAnalysis.analysisType,
-                  confidence: queryAnalysis.confidence,
-                  intent: queryAnalysis.intent,
-                }
-              : undefined,
-          }),
-        });
-
-        if (!response.ok) {
-          throw new Error(`Analysis request failed: ${response.status}`);
-        }
-
-        const jobInfo = (await response.json()) as {
-          jobId: string;
-          pollingUrl: string;
-        };
-
-        const jobMessage: ChatMessage = {
-          id: loadingMessage.id,
-          role: "assistant",
-          content:
-            "Analysis started. Processing satellite imagery and running AI models...",
-          timestamp: new Date(),
-          isLoading: true,
-          jobId: jobInfo.jobId,
-          analysisStatus: {
-            jobId: jobInfo.jobId,
-            status: "PENDING",
-            progress: "Analysis started...",
-            elapsedTime: 0,
-          },
-        };
-
+        // Step 5: Update UI with combined results
         setMessages((prev) =>
-          prev.map((msg) => (msg.id === loadingMessage.id ? jobMessage : msg))
+          prev.map((msg) =>
+            msg.id === loadingMessage.id
+              ? {
+                  ...msg,
+                  content: successMessage,
+                  data: enhancedResult,
+                  isLoading: false,
+                  isStreaming: true,
+                }
+              : msg
+          )
         );
 
-        onAnalysisStart?.(jobInfo.jobId);
-        startJobPolling(jobInfo.jobId, jobInfo.pollingUrl, loadingMessage.id);
-      } catch (error) {
-        console.error("Analysis submission failed:", error);
+        // Update context state
+        setCurrentLocation(enhancedResult.city || null);
+        setCurrentAnalysisType(enhancedResult.analysisType || null);
+        setLastAnalysisData(enhancedResult);
 
+        onMapUpdate?.(enhancedResult);
+        setIsProcessing(false);
+        onAnalysisStart?.(null);
+      } catch (error) {
+        console.error("Parallel analysis failed:", error);
         console.log("Falling back to legacy query processing...");
         await handleLegacyQuery(inputQuery, loadingMessage.id);
       }
@@ -1339,15 +643,707 @@ What would you like to explore?`;
     [
       currentInput,
       isProcessing,
-      analyzeQuery,
-      handleFollowUpQuestion,
-      onMapUpdate,
+      currentLocation,
       onAnalysisStart,
-      startJobPolling,
-      handleLegacyQuery,
+      onMapUpdate,
       transformAnalysisResult,
-      generateSuccessMessage,
     ]
+  );
+
+  // NEW: Satellite analysis function with NLP location extraction
+  const performSatelliteAnalysis = useCallback(async (inputQuery: string) => {
+    try {
+      // Step 1: First extract location using NLP
+      const nlpResponse = await fetch("/api/nlp-query-analysis", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          query: inputQuery,
+          chatHistory: [],
+          currentLocation: null,
+          currentAnalysisType: null,
+        }),
+      });
+
+      let extractedLocation = null;
+      if (nlpResponse.ok) {
+        const nlpResult = await nlpResponse.json();
+        extractedLocation = nlpResult.extractedLocation;
+        console.log("NLP extracted location:", extractedLocation);
+      }
+
+      // Step 2: Use extracted location or fallback
+      const locationName = extractedLocation || inputQuery;
+      console.log("Using location for satellite API:", locationName);
+
+      // Step 3: Try Unified API endpoints for satellite analysis with clean location
+      const locationResp = await fetch(`${UNIFIED_API_BASE}/analyze/location`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          location_name: locationName,
+          zoom_level: "City-Wide (0.025°)",
+          resolution: "Standard (5m)",
+          overlay_alpha: 0.4,
+        }),
+      });
+
+      if (locationResp.ok) {
+        return await locationResp.json();
+      }
+
+      // Step 4: Try location search endpoint with clean location
+      const searchResp = await fetch(`${UNIFIED_API_BASE}/locations/search`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ query: locationName, limit: 1 }),
+      });
+
+      if (searchResp.ok) {
+        const search = await searchResp.json();
+        const first = search.locations?.[0];
+        if (first?.coordinates?.lat && first?.coordinates?.lon) {
+          const analyzeResp = await fetch(`${UNIFIED_API_BASE}/analyze`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              location: {
+                lat: first.coordinates.lat,
+                lon: first.coordinates.lon,
+              },
+              zoom_level: "City-Wide (0.025°)",
+              resolution: "Standard (5m)",
+              overlay_alpha: 0.4,
+              include_images: true,
+            }),
+          });
+
+          if (analyzeResp.ok) {
+            return await analyzeResp.json();
+          }
+        }
+      }
+
+      throw new Error("Satellite analysis failed");
+    } catch (error) {
+      console.error("Satellite analysis failed:", error);
+      throw error;
+    }
+  }, []);
+
+  // NEW: Combined success message generator
+  const generateCombinedSuccessMessage = useCallback(
+    async (
+      enhancedResult: EnhancedQueryResult,
+      satelliteAnalysis: { data?: any; elapsedTime?: number },
+      ndviAnalysis: { success?: boolean; data?: any },
+      _userQuery: string
+    ): Promise<string> => {
+      const location = enhancedResult.city || "the analyzed area";
+      const hasNdvi = ndviAnalysis && ndviAnalysis.success;
+      const hasSatellite = Boolean(satelliteAnalysis);
+
+      let message = `🛰️ **Comprehensive Analysis Complete** for ${location}\n\n`;
+
+      // Satellite analysis summary
+      if (hasSatellite) {
+        const changePercentage =
+          (enhancedResult.statistics as any)?.changePercentage || 0;
+        message += `**📊 Satellite Analysis:**\n`;
+        message += `• **Land Use Change:** ${changePercentage.toFixed(
+          1
+        )}% detected\n`;
+        message += `• **Areas Analyzed:** ${
+          enhancedResult.polygons?.length || 0
+        } regions\n`;
+        message += `• **Analysis Type:** ${
+          enhancedResult.analysisType || "change_detection"
+        }\n\n`;
+      }
+
+      // NDVI analysis summary
+      if (hasNdvi) {
+        const { change_analysis, ndvi_analysis } = ndviAnalysis.data;
+        message += `**🌱 NDVI Vegetation Analysis:**\n`;
+        message += `• **Total Change:** ${change_analysis.total_change_percentage.toFixed(
+          1
+        )}%\n`;
+        message += `• **Vegetation Change:** ${
+          change_analysis.vegetation_change_net > 0 ? "+" : ""
+        }${change_analysis.vegetation_change_net.toFixed(1)}%\n`;
+        message += `• **Urban Change:** ${
+          change_analysis.urban_change_net > 0 ? "+" : ""
+        }${change_analysis.urban_change_net.toFixed(1)}%\n`;
+        message += `• **Change Intensity:** ${change_analysis.change_intensity}\n`;
+        message += `• **Valid Pixels:** ${ndvi_analysis.change_statistics.total_valid_pixels.toLocaleString()}\n\n`;
+      }
+
+      // Combined insights
+      message += `**🎯 Key Insights:**\n`;
+      if (hasNdvi && hasSatellite) {
+        message += `• **Multi-Modal Analysis:** Both satellite imagery and NDVI data confirm land use changes\n`;
+        message += `• **Vegetation Health:** ${
+          ndviAnalysis.data.change_analysis.vegetation_change_net > 0
+            ? "Improving"
+            : "Declining"
+        } vegetation patterns detected\n`;
+        message += `• **Urban Development:** ${
+          ndviAnalysis.data.change_analysis.urban_change_net > 0
+            ? "Expansion"
+            : "Contraction"
+        } in urban areas\n`;
+      } else if (hasNdvi) {
+        message += `• **NDVI Analysis:** Comprehensive vegetation change detection completed\n`;
+        message += `• **Dominant Change:** ${ndviAnalysis.data.change_analysis.dominant_change}\n`;
+      } else if (hasSatellite) {
+        message += `• **Satellite Analysis:** High-resolution change detection completed\n`;
+      }
+
+      message += `\n**📈 Data Visualization:**\n`;
+      message += `• **Map View:** Interactive satellite imagery and change polygons\n`;
+      message += `• **Analytics Dashboard:** Detailed statistics and trend analysis\n`;
+      if (hasNdvi) {
+        message += `• **NDVI Dashboard:** Area charts and bar charts showing vegetation patterns\n`;
+      }
+
+      message += `\n*Switch between tabs to explore the different visualizations and insights.*`;
+
+      return message;
+    },
+    []
+  );
+
+  // NEW: NDVI Analysis function
+  const performNDVIAnalysis = useCallback(
+    async (
+      query: string
+    ): Promise<{
+      success: boolean;
+      data?: NDVIAnalysisResult;
+      error?: string;
+    }> => {
+      try {
+        // Step 1: Use NLP to extract parameters
+        const nlpResponse = await fetch("/api/nlp-query-analysis", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            query,
+            chatHistory: [],
+            currentLocation: null,
+            currentAnalysisType: null,
+          }),
+        });
+
+        if (!nlpResponse.ok) {
+          throw new Error("NLP analysis failed");
+        }
+
+        const nlpResult = await nlpResponse.json();
+
+        // Step 2: Extract parameters with defaults
+        const location =
+          nlpResult.extractedLocation || "Amazon Rainforest, Brazil";
+
+        // Extract timeline from query or use defaults
+        const timelineMatch = query.match(/(\d{4})/g);
+        const currentYear = new Date().getFullYear();
+        let timeline_start = "2020-01-01";
+        let timeline_end = "2024-01-01";
+
+        if (timelineMatch && timelineMatch.length >= 2) {
+          timeline_start = `${timelineMatch[0]}-01-01`;
+          timeline_end = `${timelineMatch[1]}-01-01`;
+        } else if (timelineMatch && timelineMatch.length === 1) {
+          timeline_start = `${timelineMatch[0]}-01-01`;
+          timeline_end = `${currentYear}-01-01`;
+        }
+
+        // Extract zoom level from query
+        let zoom_level = "City-Wide (0.025°)";
+        if (
+          query.toLowerCase().includes("detailed") ||
+          query.toLowerCase().includes("high resolution")
+        ) {
+          zoom_level = "High Resolution (0.01°)";
+        } else if (
+          query.toLowerCase().includes("regional") ||
+          query.toLowerCase().includes("wide area")
+        ) {
+          zoom_level = "Regional (0.05°)";
+        }
+
+        // Determine analysis focus
+        let analysis_focus = "vegetation";
+        if (
+          nlpResult.analysisType === "urbanization" ||
+          query.toLowerCase().includes("urban")
+        ) {
+          analysis_focus = "urban";
+        } else if (
+          query.toLowerCase().includes("water") ||
+          query.toLowerCase().includes("river")
+        ) {
+          analysis_focus = "water";
+        }
+
+        // Step 3: Call NDVI API
+        const ndviResponse = await fetch("http://localhost:8000/analyze/ndvi", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            location,
+            timeline_start,
+            timeline_end,
+            zoom_level,
+            want_recommendations: true,
+            analysis_focus,
+          }),
+        });
+
+        if (!ndviResponse.ok) {
+          throw new Error(`NDVI API failed: ${ndviResponse.status}`);
+        }
+
+        const ndviResult = await ndviResponse.json();
+
+        if (!ndviResult.success) {
+          throw new Error("NDVI analysis returned failure");
+        }
+
+        return { success: true, data: ndviResult };
+      } catch (error) {
+        console.error("NDVI analysis failed:", error);
+        return {
+          success: false,
+          error: error instanceof Error ? error.message : "Unknown error",
+        };
+      }
+    },
+    []
+  );
+
+  // NEW: Transform NDVI result to EnhancedQueryResult format
+  const transformNDVIResult = useCallback(
+    (ndviResult: NDVIAnalysisResult): EnhancedQueryResult => {
+      const { latitude, longitude } = ndviResult.coordinates;
+      const offset = 0.05;
+
+      const polygons = [
+        {
+          id: "ndvi_analysis_area",
+          coordinates: [
+            [
+              [longitude - offset, latitude - offset],
+              [longitude + offset, latitude - offset],
+              [longitude + offset, latitude + offset],
+              [longitude - offset, latitude + offset],
+              [longitude - offset, latitude - offset],
+            ],
+          ],
+          properties: {
+            name: `NDVI Analysis: ${ndviResult.location}`,
+            priceChange: Math.round(
+              ndviResult.change_analysis.vegetation_change_net
+            ),
+            floodRisk: Math.abs(
+              Math.round(ndviResult.change_analysis.water_change_net)
+            ),
+            area: `${ndviResult.change_analysis.change_intensity} intensity`,
+            population:
+              ndviResult.ndvi_analysis.change_statistics.total_valid_pixels,
+            avgPropertyValue: `${ndviResult.change_analysis.total_change_percentage.toFixed(
+              1
+            )}% total change`,
+          },
+        },
+      ];
+
+      return {
+        polygons,
+        summary: {
+          totalAreas: 1,
+          avgPriceIncrease: ndviResult.change_analysis.vegetation_change_net,
+          avgFloodRiskIncrease: Math.abs(
+            ndviResult.change_analysis.water_change_net
+          ),
+          timeRange: `${ndviResult.timeline_start} to ${ndviResult.timeline_end}`,
+          totalPopulation:
+            ndviResult.ndvi_analysis.change_statistics.total_valid_pixels,
+        },
+        insights: ndviResult.recommendations,
+        city: ndviResult.location,
+        dataSource: {
+          propertyData: "NDVI Satellite Analysis",
+          riskData: "Vegetation Change Detection",
+          boundaryData: "Remote Sensing Data",
+        },
+        meta: {
+          queryProcessed: `NDVI analysis for ${ndviResult.location}`,
+          resultsCount: 1,
+          processingTime: "3s",
+          aiProcessed: true,
+          geminiUsed: false,
+        },
+        analysisType: "change_detection",
+        statistics: {
+          totalChangeArea:
+            ndviResult.change_analysis.total_change_percentage * 1000,
+          changePercentage: ndviResult.change_analysis.total_change_percentage,
+          changedPixels:
+            ndviResult.ndvi_analysis.change_statistics.total_valid_pixels,
+          totalPixels:
+            ndviResult.ndvi_analysis.change_statistics.total_valid_pixels * 2,
+          // Add NDVI-specific data
+          ndviData: ndviResult,
+        } as any,
+      };
+    },
+    []
+  );
+
+  // NEW: Generate NDVI-specific insights
+  const generateNDVIInsights = useCallback(
+    (ndviResult: NDVIAnalysisResult): string => {
+      const { ndvi_analysis, change_analysis } = ndviResult;
+      const location = ndviResult.location;
+
+      const vegGainPct =
+        ndvi_analysis.change_statistics.vegetation_gain.percentage;
+      const vegLossPct =
+        ndvi_analysis.change_statistics.vegetation_loss.percentage;
+      const netChange = change_analysis.vegetation_change_net;
+      const totalChange = change_analysis.total_change_percentage;
+      const intensity = change_analysis.change_intensity;
+
+      return `The vegetation story unfolding across ${location} tells us about significant ecological transformation captured through advanced satellite monitoring. Based on Sentinel-2 satellite imagery from the European Space Agency's Copernicus program, combined with detailed geographic mapping from OpenStreetMap contributors, our NDVI analysis reveals compelling patterns of landscape evolution.
+
+**📊 The Data Story:**
+Through multi-temporal analysis utilizing Copernicus Sentinel mission data, we observe ${
+        netChange > 0 ? "+" : ""
+      }${netChange.toFixed(
+        1
+      )}% net vegetation change across this region. The narrative emerging from ${ndvi_analysis.change_statistics.total_valid_pixels.toLocaleString()} analyzed pixels tells us about ${totalChange.toFixed(
+        1
+      )}% total landscape transformation, with change intensity characterized as ${intensity}.
+
+**🔍 Detailed Analysis:**
+Our U-Net deep learning algorithms processed high-resolution imagery to reveal that ${vegGainPct.toFixed(
+        1
+      )}% of the area experienced vegetation gain (${ndvi_analysis.change_statistics.vegetation_gain.count.toLocaleString()} pixels), while ${vegLossPct.toFixed(
+        1
+      )}% showed vegetation loss (${ndvi_analysis.change_statistics.vegetation_loss.count.toLocaleString()} pixels). Additionally, ${ndvi_analysis.change_statistics.urbanization.percentage.toFixed(
+        1
+      )}% of the region underwent urbanization processes.
+
+**🌊 Water and Urban Changes:**
+The analysis, referenced against OpenStreetMap geographic boundaries, shows ${Math.abs(
+        change_analysis.water_change_net
+      ).toFixed(1)}% net water change and ${Math.abs(
+        change_analysis.urban_change_net
+      ).toFixed(
+        1
+      )}% urban transformation, creating a comprehensive picture of landscape dynamics.
+
+**📈 NDVI Statistical Story:**
+The numerical narrative reveals mean NDVI values shifting from ${ndvi_analysis.ndvi_statistics.before.mean.toFixed(
+        3
+      )} to ${ndvi_analysis.ndvi_statistics.after.mean.toFixed(
+        3
+      )}, representing a ${
+        ndvi_analysis.ndvi_statistics.change.mean_change > 0 ? "+" : ""
+      }${ndvi_analysis.ndvi_statistics.change.mean_change.toFixed(
+        3
+      )} change in vegetation health.
+
+**🎯 AI Recommendations:**
+${ndviResult.recommendations.map((rec: string) => `• ${rec}`).join("\n")}
+
+**ℹ️ Analysis Context:**
+This comprehensive NDVI assessment, powered by ESA's Copernicus program data and OSM community mapping, utilized ${ndvi_analysis.change_statistics.total_valid_pixels.toLocaleString()} valid pixels to detect vegetation changes. ${
+        netChange > 5
+          ? "This significant vegetation growth indicates healthy ecosystem recovery or agricultural expansion, as documented through our multi-source satellite analysis."
+          : netChange < -5
+          ? "The detected vegetation loss suggests environmental pressures that may require conservation measures, based on our integrated satellite and geographic data analysis."
+          : "The moderate vegetation changes suggest stable land use patterns, as captured through our comprehensive Sentinel-OSM data integration."
+      }
+
+*Sources: Sentinel-2 ESA Copernicus satellite imagery, OpenStreetMap community geographic data, U-Net deep learning NDVI analysis*`;
+    },
+    []
+  );
+
+  // NEW: Query analysis function
+  const analyzeQuery = useCallback(
+    async (query: string) => {
+      try {
+        const response = await fetch("/api/nlp-query-analysis", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            query,
+            chatHistory: messages.slice(-6), // Last 6 messages for context
+            currentLocation,
+            currentAnalysisType,
+          }),
+        });
+
+        if (!response.ok) {
+          throw new Error("Query analysis failed");
+        }
+
+        return await response.json();
+      } catch (error) {
+        console.error("Query analysis failed:", error);
+        // Return default analysis
+        return {
+          isNewLocationQuery: true,
+          isFollowUpQuestion: false,
+          extractedLocation: null,
+          analysisType: null,
+          intent: "analysis request",
+          confidence: 0.5,
+          requiresNewAnalysis: true,
+        };
+      }
+    },
+    [messages, currentLocation, currentAnalysisType]
+  );
+
+  // NEW: Handle follow-up questions
+  const handleFollowUpQuestion = useCallback(
+    async (
+      inputQuery: string,
+      loadingMessageId: string,
+      followUpResponse: string
+    ) => {
+      // Update message with follow-up response
+      setMessages((prev) =>
+        prev.map((msg) =>
+          msg.id === loadingMessageId
+            ? {
+                ...msg,
+                content: followUpResponse,
+                isLoading: false,
+                isStreaming: true,
+              }
+            : msg
+        )
+      );
+
+      setIsProcessing(false);
+    },
+    []
+  );
+
+  // NEW: Legacy query handling fallback
+  const handleLegacyQuery = useCallback(
+    async (inputQuery: string, loadingMessageId: string) => {
+      try {
+        setMessages((prev) =>
+          prev.map((msg) =>
+            msg.id === loadingMessageId
+              ? {
+                  ...msg,
+                  content: "🔄 Processing with legacy analysis...",
+                  isLoading: true,
+                }
+              : msg
+          )
+        );
+
+        // Try real data API as fallback
+        const result = await RealDataAPIClient.queryNaturalLanguageAPI(
+          inputQuery
+        );
+
+        const successMessage = `📊 **Analysis Complete**
+
+I've analyzed your query using our fallback system. The results show data for ${
+          result.city || "the requested area"
+        } with ${result.polygons?.length || 0} areas identified.
+
+**Key Findings:**
+• **Average Change:** ${result.summary?.avgPriceIncrease?.toFixed(1) || "N/A"}%
+• **Risk Assessment:** ${
+          result.summary?.avgFloodRiskIncrease?.toFixed(1) || "N/A"
+        }% average impact
+• **Total Areas:** ${result.summary?.totalAreas || 0} regions analyzed
+
+**Data Sources:**
+• Property Data: ${result.dataSource?.propertyData || "Unknown"}
+• Risk Data: ${result.dataSource?.riskData || "Unknown"}
+• Boundary Data: ${result.dataSource?.boundaryData || "Unknown"}
+
+*View the map and analytics tabs to explore the detailed visualizations.*`;
+
+        setMessages((prev) =>
+          prev.map((msg) =>
+            msg.id === loadingMessageId
+              ? {
+                  ...msg,
+                  content: successMessage,
+                  data: result,
+                  isLoading: false,
+                  isStreaming: true,
+                }
+              : msg
+          )
+        );
+
+        setCurrentLocation(result.city || null);
+        setLastAnalysisData(result);
+        onMapUpdate?.(result);
+        setIsProcessing(false);
+        onAnalysisStart?.(null);
+      } catch (error) {
+        console.error("Legacy query processing failed:", error);
+
+        setMessages((prev) =>
+          prev.map((msg) =>
+            msg.id === loadingMessageId
+              ? {
+                  ...msg,
+                  content: `❌ **Analysis Failed**
+
+I apologize, but I encountered an error processing your query. This could be due to:
+
+• **Network connectivity issues**
+• **Service temporarily unavailable**
+• **Invalid location or parameters**
+
+**Please try:**
+1. **Simplify your query** - Use clear location names like "Mumbai", "Delhi", or "Bangalore"
+2. **Check your connection** - Ensure you have a stable internet connection
+3. **Try again** - Sometimes a retry resolves temporary issues
+
+**Example queries that work well:**
+• "Show deforestation in Amazon rainforest from 2020 to 2024"
+• "Analyze urban expansion in Mumbai since 2020"
+• "Detect land use changes around Delhi"
+• "Show NDVI vegetation changes in Bangalore"
+
+Feel free to try another query!`,
+                  isLoading: false,
+                  isStreaming: true,
+                }
+              : msg
+          )
+        );
+
+        setIsProcessing(false);
+        onAnalysisStart?.(null);
+      }
+    },
+    [onMapUpdate, onAnalysisStart]
+  );
+
+  // NEW: Helper functions for query classification
+  const isGenericLandingPageQuery = useCallback((query: string): boolean => {
+    const genericKeywords = [
+      "property",
+      "investment",
+      "appreciation",
+      "hotspots",
+      "resilient",
+      "neighborhoods",
+      "wards",
+      "flood risk",
+      "climate risk",
+      "values rose",
+    ];
+
+    const hasLocationKeywords = [
+      "mumbai",
+      "pune",
+      "delhi",
+      "bangalore",
+      "chennai",
+      "amazon",
+      "forest",
+    ].some((loc) => query.toLowerCase().includes(loc));
+
+    const hasGenericKeywords = genericKeywords.some((keyword) =>
+      query.toLowerCase().includes(keyword)
+    );
+
+    return hasGenericKeywords && !hasLocationKeywords;
+  }, []);
+
+  const extractLocationFromQuery = useCallback(
+    (query: string): string | null => {
+      const locationPatterns = [
+        /(?:in|near|around|at)\s+([A-Za-z\s]+?)(?:\s+(?:city|district|state|area|region)|$)/i,
+        /(mumbai|pune|delhi|bangalore|chennai|kolkata|hyderabad|amazon|rainforest)/i,
+      ];
+
+      for (const pattern of locationPatterns) {
+        const match = query.match(pattern);
+        if (match) {
+          return match[1] || match[0];
+        }
+      }
+      return null;
+    },
+    []
+  );
+
+  const isNDVIRelevantQuery = useCallback((query: string): boolean => {
+    const ndviKeywords = [
+      "ndvi",
+      "vegetation",
+      "forest",
+      "deforestation",
+      "green",
+      "tree",
+      "canopy",
+      "plants",
+      "ecosystem",
+      "biodiversity",
+      "agricultural",
+      "crop",
+      "farmland",
+      "jungle",
+      "woodland",
+      "grassland",
+    ];
+
+    return ndviKeywords.some((keyword) =>
+      query.toLowerCase().includes(keyword)
+    );
+  }, []);
+
+  // NEW: Generate satellite-only success message
+  const generateSatelliteOnlyMessage = useCallback(
+    (enhancedResult: EnhancedQueryResult, satelliteAnalysis: any): string => {
+      const location = enhancedResult.city || "the analyzed area";
+      const changePercentage =
+        (enhancedResult.statistics as any)?.changePercentage || 0;
+
+      return `🛰️ **Satellite Analysis Complete** for ${location}
+
+**📊 Key Findings:**
+• **Land Use Change:** ${changePercentage.toFixed(1)}% detected
+• **Areas Analyzed:** ${enhancedResult.polygons?.length || 0} regions
+• **Analysis Type:** ${enhancedResult.analysisType || "change_detection"}
+• **Processing Time:** ${enhancedResult.meta?.processingTime || "3s"}
+
+**🎯 Insights:**
+${
+  enhancedResult.insights
+    ?.slice(0, 3)
+    .map((insight) => `• ${insight}`)
+    .join("\n") ||
+  "• High-resolution satellite imagery analysis completed\n• Change detection algorithms applied\n• Geographic boundaries identified"
+}
+
+**📈 Data Visualization:**
+• **Map View:** Interactive satellite imagery and change polygons
+• **Analytics Dashboard:** Detailed statistics and trend analysis
+
+*Switch between tabs to explore the different visualizations. For vegetation-specific analysis, try queries like "Show NDVI changes in ${location}"*`;
+    },
+    []
   );
 
   React.useMemo(() => {

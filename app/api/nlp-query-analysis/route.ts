@@ -80,27 +80,34 @@ Determine if this query is:
 2. **Follow-up Question**: Asks about previous analysis results without mentioning new locations
 
 LOCATION EXTRACTION RULES:
-- Extract the most specific location mentioned in the query
-- Handle complex patterns like: "deforestation near infosys pune", "urbanization around mumbai airport", "changes in amazon rainforest"
-- Look for: city names, landmarks, company locations, geographical features, coordinates
-- Examples:
-  * "deforestation near infosys pune" → "infosys pune" or "pune"
-  * "urbanization around mumbai airport" → "mumbai airport" or "mumbai"
+- Extract the COMPLETE, SPECIFIC location mentioned in the query
+- Handle complex patterns and preserve the full location context:
+  * "detect urban expansion near infosys pune" → "infosys pune"
+  * "deforestation around mumbai airport" → "mumbai airport"
   * "changes in central park new york" → "central park new york"
-  * "satellite analysis of bangalore" → "bangalore"
+  * "satellite analysis of bangalore tech corridor" → "bangalore tech corridor"
+  * "urbanization near wipro hyderabad" → "wipro hyderabad"
+  * "forest loss in amazon rainforest brazil" → "amazon rainforest brazil"
+- Look for: city names, landmarks, company locations, geographical features, coordinates, compound locations
+- PRESERVE the full context - don't just extract the city name if there's more specific information
+- Examples of what to extract:
+  * "infosys pune" (not just "pune")
+  * "mumbai airport" (not just "mumbai")
+  * "amazon rainforest" (not just "amazon")
+  * "central delhi" (not just "delhi")
 - Ignore: pronouns like "this area", "there", "here" unless no prior context exists
 
 ANALYSIS TYPE DETECTION:
-- "deforestation", "forest loss", "tree cover" → "deforestation"
-- "urbanization", "urban growth", "city expansion", "development" → "urbanization"
-- "change detection", "land use change", "environmental change" → "change_detection"
+- "deforestation", "forest loss", "tree cover", "woodland clearing" → "deforestation"
+- "urbanization", "urban growth", "city expansion", "development", "construction" → "urbanization"
+- "change detection", "land use change", "environmental change", "satellite analysis" → "change_detection"
 - If multiple types mentioned, prioritize the most specific one
 
 FOLLOW-UP PATTERNS:
-- Questions about statistics: "What's the percentage?", "How much area changed?"
-- Clarifications: "Can you explain more?", "What does this mean?"
-- Comparisons: "How does this compare to global averages?"
-- Deeper insights: "What are the implications?", "What causes this?"
+- Questions about statistics: "What's the percentage?", "How much area changed?", "Show me the stats"
+- Clarifications: "Can you explain more?", "What does this mean?", "Tell me more about this"
+- Comparisons: "How does this compare?", "What about other areas?", "Is this normal?"
+- Deeper insights: "What are the implications?", "What causes this?", "Why is this happening?"
 
 RESPONSE FORMAT (JSON):
 {
@@ -114,11 +121,11 @@ RESPONSE FORMAT (JSON):
   "requiresNewAnalysis": boolean
 }
 
-IMPORTANT:
-- For "extractedLocation", provide the EXACT location string from the query, not a generic phrase
-- If query mentions both analysis type and location, this is almost always a new location query
-- Set "requiresNewAnalysis" to true if isNewLocationQuery is true
-- Only set "isFollowUpQuestion" to true if no new location is mentioned AND there's a current location
+IMPORTANT DECISION LOGIC:
+- If ANY specific location is mentioned (even with current context) → isNewLocationQuery = true, requiresNewAnalysis = true
+- If NO new location AND current location exists AND query asks about previous results → isFollowUpQuestion = true, requiresNewAnalysis = false
+- For extractedLocation: provide the EXACT, COMPLETE location string from the query
+- Set confidence high (0.8+) for clear patterns, lower (0.6-0.7) for ambiguous cases
 
 FOLLOW-UP RESPONSE GUIDELINES:
 If it's a follow-up question, provide a conversational response based on the chat context about the previous analysis. Reference specific data points, explain implications, or provide additional insights about the current location's analysis.
@@ -171,49 +178,84 @@ async function analyzeFallback(
     const lowerText = text.toLowerCase();
     const originalText = text;
 
-    // Pattern 1: "near/around/in [location]"
+    // Pattern 1: "near/around/in [location]" - Enhanced to capture more context
     const nearPatterns = [
-      /(?:near|around|in|at|of)\s+([a-zA-Z\s]+?)(?:\s|$|,|\?|!)/i,
-      /(?:deforestation|urbanization|changes?)\s+(?:near|around|in|at|of)\s+([a-zA-Z\s]+?)(?:\s|$|,|\?|!)/i,
+      /(?:near|around|in|at|of)\s+([a-zA-Z\s]+?)(?:\s+(?:from|between|since)|$|,|\?|!)/i,
+      /(?:deforestation|urbanization|changes?|expansion|development)\s+(?:near|around|in|at|of)\s+([a-zA-Z\s]+?)(?:\s+(?:from|between|since)|$|,|\?|!)/i,
+      /(?:detect|analyze|show|monitor)\s+(?:.*?\s+)?(?:near|around|in|at|of)\s+([a-zA-Z\s]+?)(?:\s+(?:from|between|since)|$|,|\?|!)/i,
     ];
 
     for (const pattern of nearPatterns) {
       const match = originalText.match(pattern);
       if (match && match[1]) {
         const location = match[1].trim();
-        // Filter out common non-location words
+        // Filter out common non-location words but preserve compound locations
         if (
-          !["the", "this", "that", "area", "region", "place"].includes(
-            location.toLowerCase()
-          )
+          ![
+            "the",
+            "this",
+            "that",
+            "area",
+            "region",
+            "place",
+            "and",
+            "or",
+            "with",
+          ].includes(location.toLowerCase())
         ) {
           return location;
         }
       }
     }
 
-    // Pattern 2: Direct city/location mentions
+    // Pattern 2: Company + Location patterns (improved)
+    const companyLocationPatterns = [
+      /(infosys|wipro|tcs|microsoft|google|apple|facebook|amazon)\s+(pune|mumbai|bangalore|hyderabad|delhi|chennai|kolkata|gurgaon|noida|mysore)/i,
+      /(infosys|wipro|tcs)\s+([a-zA-Z]+)/i, // For IT companies with any city
+    ];
+
+    for (const pattern of companyLocationPatterns) {
+      const match = originalText.match(pattern);
+      if (match) {
+        return match[0]; // Return full match like "infosys pune"
+      }
+    }
+
+    // Pattern 3: Enhanced city/location mentions with context
     const cityPatterns = [
-      /(mumbai|delhi|bangalore|pune|kolkata|chennai|hyderabad|ahmedabad|gurgaon|noida|mysore)/i,
-      /(london|paris|tokyo|new york|berlin|sydney|toronto|los angeles|chicago|boston)/i,
-      /(amazon|sahara|himalaya|andes|sahel|congo|nile|ganges)/i,
+      // Indian cities with context
+      /(mumbai\s+(?:airport|central|suburban|tech\s+park|financial\s+district)|mumbai)/i,
+      /(delhi\s+(?:ncr|central|new\s+delhi|south\s+delhi|airport)|delhi)/i,
+      /(bangalore\s+(?:tech\s+corridor|electronic\s+city|airport|whitefield|koramangala)|bangalore)/i,
+      /(pune\s+(?:airport|hinjewadi|magarpatta|camp|shivajinagar)|pune)/i,
+      /(chennai\s+(?:airport|it\s+corridor|omr|guindy)|chennai)/i,
+      /(hyderabad\s+(?:hitec\s+city|gachibowli|airport|secunderabad)|hyderabad)/i,
+
+      // International locations
+      /(amazon\s+(?:rainforest|forest|basin)|amazon)/i,
+      /(central\s+park\s+new\s+york|new\s+york)/i,
+      /(london\s+(?:city|downtown|airport)|london)/i,
+      /(tokyo\s+(?:bay|metropolitan|shibuya)|tokyo)/i,
+
+      // Geographic features
+      /(amazon\s+rainforest\s+brazil|amazon\s+rainforest)/i,
+      /(sahara\s+desert|sahara)/i,
+      /(himalaya\s+mountains|himalaya)/i,
+      /(congo\s+basin|congo)/i,
+
+      // Countries and regions
       /(india|china|usa|america|brazil|russia|canada|australia|europe|africa|asia)/i,
-      /(infosys|wipro|tcs|microsoft|google|apple|facebook|amazon)\s+([a-zA-Z]+)/i,
+
+      // Fallback single city names
+      /(mumbai|delhi|bangalore|pune|kolkata|chennai|hyderabad|ahmedabad|gurgaon|noida|mysore)/i,
+      /(london|paris|tokyo|berlin|sydney|toronto|los\s+angeles|chicago|boston)/i,
     ];
 
     for (const pattern of cityPatterns) {
       const match = originalText.match(pattern);
       if (match) {
-        return match[0];
+        return match[0]; // Return the full matched location with context
       }
-    }
-
-    // Pattern 3: Company + Location (e.g., "infosys pune")
-    const companyLocationPattern =
-      /(infosys|wipro|tcs|microsoft|google|apple|facebook|amazon)\s+([a-zA-Z]+)/i;
-    const companyMatch = originalText.match(companyLocationPattern);
-    if (companyMatch) {
-      return companyMatch[0]; // Return full match like "infosys pune"
     }
 
     // Pattern 4: Coordinates

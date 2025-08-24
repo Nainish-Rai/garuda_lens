@@ -476,6 +476,43 @@ export default function ChatInterface({
     [getNumber, getString]
   );
 
+  // NEW: Query analysis function
+  const analyzeQuery = useCallback(
+    async (query: string) => {
+      try {
+        const response = await fetch("/api/nlp-query-analysis", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            query,
+            chatHistory: messages.slice(-6), // Last 6 messages for context
+            currentLocation,
+            currentAnalysisType,
+          }),
+        });
+
+        if (!response.ok) {
+          throw new Error("Query analysis failed");
+        }
+
+        return await response.json();
+      } catch (error) {
+        console.error("Query analysis failed:", error);
+        // Return default analysis
+        return {
+          isNewLocationQuery: true,
+          isFollowUpQuestion: false,
+          extractedLocation: null,
+          analysisType: null,
+          intent: "analysis request",
+          confidence: 0.5,
+          requiresNewAnalysis: true,
+        };
+      }
+    },
+    [messages, currentLocation, currentAnalysisType]
+  );
+
   // Enhanced query submission with parallel satellite and NDVI analysis
   const handleQuerySubmit = useCallback(
     async (query?: string) => {
@@ -502,140 +539,194 @@ export default function ChatInterface({
       setIsProcessing(true);
 
       try {
-        // Step 1: Always start comprehensive analysis
-        onAnalysisStart?.("pending");
+        // Step 1: Always analyze the query first to determine if it's a follow-up
+        console.log("Analyzing query intent...");
+        const queryAnalysis = await analyzeQuery(inputQuery);
 
-        setMessages((prev) =>
-          prev.map((msg) =>
-            msg.id === loadingMessage.id
-              ? {
-                  ...msg,
-                  content: "🔄 Starting comprehensive analysis...",
-                  isLoading: true,
-                }
-              : msg
-          )
-        );
+        console.log("Query analysis result:", queryAnalysis);
 
-        // Step 2: Run BOTH satellite and NDVI analysis in parallel
-        setMessages((prev) =>
-          prev.map((msg) =>
-            msg.id === loadingMessage.id
-              ? {
-                  ...msg,
-                  content:
-                    "🛰️🌱 Running satellite and NDVI analysis in parallel...",
-                  isLoading: true,
-                }
-              : msg
-          )
-        );
+        // Step 2: Handle follow-up questions without calling analysis APIs
+        if (
+          queryAnalysis.isFollowUpQuestion &&
+          queryAnalysis.followUpResponse
+        ) {
+          console.log("Handling follow-up question...");
 
-        // Start both analyses simultaneously
-        const satellitePromise = performSatelliteAnalysis(inputQuery).catch(
-          (error) => {
-            console.warn("Satellite analysis failed:", error);
-            return null;
-          }
-        );
-
-        const ndviPromise = performNDVIAnalysis(inputQuery).catch((error) => {
-          console.warn("NDVI analysis failed:", error);
-          return { success: false, error: error.message };
-        });
-
-        // Wait for both analyses to complete
-        console.log("Starting parallel analysis...");
-        const [satelliteResult, ndviResult] = await Promise.all([
-          satellitePromise,
-          ndviPromise,
-        ]);
-
-        console.log("Parallel analysis completed:", {
-          satellite: satelliteResult ? "success" : "failed",
-          ndvi: ndviResult?.success ? "success" : "failed",
-        });
-
-        // Step 3: Process and combine results
-        let enhancedResult = null;
-        let successMessage = "";
-
-        // Process satellite results
-        if (satelliteResult) {
-          const envelope = {
-            ...satelliteResult.data,
-            elapsedTime: satelliteResult.elapsedTime,
-          };
-          enhancedResult = transformAnalysisResult(envelope);
-        }
-
-        // Process NDVI results
-        let ndviData = null;
-        if (ndviResult && ndviResult.success && ndviResult.data) {
-          ndviData = ndviResult.data;
-        }
-
-        // Step 4: Combine results based on what succeeded
-        if (enhancedResult && ndviData) {
-          // Both analyses succeeded - create comprehensive result
-          enhancedResult.statistics = {
-            ...enhancedResult.statistics,
-            ndviData: ndviData,
-          };
-          successMessage = await generateCombinedSuccessMessage(
-            enhancedResult,
-            satelliteResult,
-            ndviResult,
-            inputQuery
+          setMessages((prev) =>
+            prev.map((msg) =>
+              msg.id === loadingMessage.id
+                ? {
+                    ...msg,
+                    content: queryAnalysis.followUpResponse!,
+                    isLoading: false,
+                    isStreaming: true,
+                  }
+                : msg
+            )
           );
-        } else if (enhancedResult) {
-          // Only satellite succeeded
-          successMessage = generateSatelliteOnlyMessage(
-            enhancedResult,
-            satelliteResult
-          );
-        } else if (ndviData) {
-          // Only NDVI succeeded
-          enhancedResult = transformNDVIResult(ndviData);
-          enhancedResult.statistics = {
-            ...enhancedResult.statistics,
-            ndviData: ndviData,
-          };
-          successMessage = generateNDVIInsights(ndviData);
-        } else {
-          // Both failed - use legacy fallback
-          console.log(
-            "Both satellite and NDVI failed, using legacy fallback..."
-          );
-          await handleLegacyQuery(inputQuery, loadingMessage.id);
+
+          setIsProcessing(false);
           return;
         }
 
-        // Step 5: Update UI with combined results
-        setMessages((prev) =>
-          prev.map((msg) =>
-            msg.id === loadingMessage.id
-              ? {
-                  ...msg,
-                  content: successMessage,
-                  data: enhancedResult,
-                  isLoading: false,
-                  isStreaming: true,
-                }
-              : msg
-          )
-        );
+        // Step 3: Handle new location queries with comprehensive analysis
+        if (
+          queryAnalysis.isNewLocationQuery &&
+          queryAnalysis.extractedLocation
+        ) {
+          console.log(
+            "Processing new location query for:",
+            queryAnalysis.extractedLocation
+          );
 
-        // Update context state
-        setCurrentLocation(enhancedResult.city || null);
-        setCurrentAnalysisType(enhancedResult.analysisType || null);
-        setLastAnalysisData(enhancedResult);
+          // Always start comprehensive analysis
+          onAnalysisStart?.("pending");
 
-        onMapUpdate?.(enhancedResult);
-        setIsProcessing(false);
-        onAnalysisStart?.(null);
+          setMessages((prev) =>
+            prev.map((msg) =>
+              msg.id === loadingMessage.id
+                ? {
+                    ...msg,
+                    content: "🔄 Starting comprehensive analysis...",
+                    isLoading: true,
+                  }
+                : msg
+            )
+          );
+
+          // Step 4: Run BOTH satellite and NDVI analysis in parallel
+          setMessages((prev) =>
+            prev.map((msg) =>
+              msg.id === loadingMessage.id
+                ? {
+                    ...msg,
+                    content:
+                      "🛰️🌱 Running satellite and NDVI analysis in parallel...",
+                    isLoading: true,
+                  }
+                : msg
+            )
+          );
+
+          // Start both analyses simultaneously
+          const satellitePromise = performSatelliteAnalysis(inputQuery).catch(
+            (error) => {
+              console.warn("Satellite analysis failed:", error);
+              return null;
+            }
+          );
+
+          const ndviPromise = performNDVIAnalysis(inputQuery).catch((error) => {
+            console.warn("NDVI analysis failed:", error);
+            return { success: false, error: error.message };
+          });
+
+          // Wait for both analyses to complete
+          console.log("Starting parallel analysis...");
+          const [satelliteResult, ndviResult] = await Promise.all([
+            satellitePromise,
+            ndviPromise,
+          ]);
+
+          console.log("Parallel analysis completed:", {
+            satellite: satelliteResult ? "success" : "failed",
+            ndvi: ndviResult?.success ? "success" : "failed",
+          });
+
+          // Step 5: Process and combine results
+          let enhancedResult = null;
+          let successMessage = "";
+
+          // Process satellite results
+          if (satelliteResult) {
+            const envelope = {
+              ...satelliteResult.data,
+              elapsedTime: satelliteResult.elapsedTime,
+            };
+            enhancedResult = transformAnalysisResult(envelope);
+          }
+
+          // Process NDVI results
+          let ndviData = null;
+          if (
+            ndviResult &&
+            ndviResult.success &&
+            "data" in ndviResult &&
+            ndviResult.data
+          ) {
+            ndviData = ndviResult.data;
+          }
+
+          // Step 6: Combine results based on what succeeded
+          if (enhancedResult && ndviData) {
+            // Both analyses succeeded - create comprehensive result
+            enhancedResult.statistics = {
+              ...enhancedResult.statistics,
+              ndviData: ndviData,
+            } as any;
+            successMessage = await generateCombinedSuccessMessage(
+              enhancedResult,
+              satelliteResult,
+              ndviResult,
+              inputQuery
+            );
+          } else if (enhancedResult) {
+            // Only satellite succeeded
+            successMessage = generateSatelliteOnlyMessage(
+              enhancedResult,
+              satelliteResult
+            );
+          } else if (ndviData) {
+            // Only NDVI succeeded
+            enhancedResult = transformNDVIResult(ndviData);
+            enhancedResult.statistics = {
+              ...enhancedResult.statistics,
+              ndviData: ndviData,
+            } as any;
+            successMessage = generateNDVIInsights(ndviData);
+          } else {
+            // Both failed - use legacy fallback
+            console.log(
+              "Both satellite and NDVI failed, using legacy fallback..."
+            );
+            await handleLegacyQuery(inputQuery, loadingMessage.id);
+            return;
+          }
+
+          // Step 7: Update UI with combined results
+          setMessages((prev) =>
+            prev.map((msg) =>
+              msg.id === loadingMessage.id
+                ? {
+                    ...msg,
+                    content: successMessage,
+                    data: enhancedResult,
+                    isLoading: false,
+                    isStreaming: true,
+                  }
+                : msg
+            )
+          );
+
+          // Update context state
+          setCurrentLocation(
+            enhancedResult.city || queryAnalysis.extractedLocation || null
+          );
+          setCurrentAnalysisType(
+            enhancedResult.analysisType || queryAnalysis.analysisType || null
+          );
+          setLastAnalysisData(enhancedResult);
+
+          onMapUpdate?.(enhancedResult);
+          setIsProcessing(false);
+          onAnalysisStart?.(null);
+        } else {
+          // Step 8: Handle general queries or unclear intent
+          console.log("Handling general query with legacy processing...");
+          await handleLegacyQuery(inputQuery, loadingMessage.id);
+        }
       } catch (error) {
-        console.error("Parallel analysis failed:", error);
+        console.error("Query processing failed:", error);
         console.log("Falling back to legacy query processing...");
         await handleLegacyQuery(inputQuery, loadingMessage.id);
       }
@@ -644,9 +735,12 @@ export default function ChatInterface({
       currentInput,
       isProcessing,
       currentLocation,
+      currentAnalysisType,
       onAnalysisStart,
       onMapUpdate,
       transformAnalysisResult,
+      analyzeQuery,
+      // Note: Other functions will be available through closure
     ]
   );
 
@@ -1069,69 +1163,6 @@ This comprehensive NDVI assessment, powered by ESA's Copernicus program data and
       }
 
 *Sources: Sentinel-2 ESA Copernicus satellite imagery, OpenStreetMap community geographic data, U-Net deep learning NDVI analysis*`;
-    },
-    []
-  );
-
-  // NEW: Query analysis function
-  const analyzeQuery = useCallback(
-    async (query: string) => {
-      try {
-        const response = await fetch("/api/nlp-query-analysis", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            query,
-            chatHistory: messages.slice(-6), // Last 6 messages for context
-            currentLocation,
-            currentAnalysisType,
-          }),
-        });
-
-        if (!response.ok) {
-          throw new Error("Query analysis failed");
-        }
-
-        return await response.json();
-      } catch (error) {
-        console.error("Query analysis failed:", error);
-        // Return default analysis
-        return {
-          isNewLocationQuery: true,
-          isFollowUpQuestion: false,
-          extractedLocation: null,
-          analysisType: null,
-          intent: "analysis request",
-          confidence: 0.5,
-          requiresNewAnalysis: true,
-        };
-      }
-    },
-    [messages, currentLocation, currentAnalysisType]
-  );
-
-  // NEW: Handle follow-up questions
-  const handleFollowUpQuestion = useCallback(
-    async (
-      inputQuery: string,
-      loadingMessageId: string,
-      followUpResponse: string
-    ) => {
-      // Update message with follow-up response
-      setMessages((prev) =>
-        prev.map((msg) =>
-          msg.id === loadingMessageId
-            ? {
-                ...msg,
-                content: followUpResponse,
-                isLoading: false,
-                isStreaming: true,
-              }
-            : msg
-        )
-      );
-
-      setIsProcessing(false);
     },
     []
   );

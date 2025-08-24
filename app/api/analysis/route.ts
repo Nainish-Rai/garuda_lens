@@ -2,6 +2,10 @@ import { NextRequest, NextResponse } from "next/server";
 import { GoogleGenerativeAI } from "@google/generative-ai";
 import { v4 as uuidv4 } from "uuid";
 import { JobStore } from "@/lib/job-store";
+// Import the new agents
+import { ChangeDetectionAgent } from "@/lib/agents/change-detection";
+import { DeforestationAgent } from "@/lib/agents/deforestation";
+import { UrbanizationAgent } from "@/lib/agents/urbanization";
 
 // Intent classification types
 interface AnalysisIntent {
@@ -71,7 +75,7 @@ export async function POST(request: NextRequest) {
 async function processAnalysisAsync(jobId: string, query: string) {
   try {
     // Update job status
-    const updateJob = (status: string, data?: any, error?: string) => {
+    const updateJob = (status: string, data?: unknown, error?: string) => {
       const current = JobStore.get(jobId);
       if (current) {
         JobStore.set(jobId, {
@@ -260,45 +264,77 @@ function createFallbackIntent(query: string): AnalysisIntent {
   };
 }
 
-// Agent delegation functions (placeholders for now, will be implemented in Phase 2)
+// Agent delegation functions - now using actual agent implementations
 async function delegateToDeforestationAgent(intent: AnalysisIntent) {
-  // TODO: Implement in Phase 2 - lib/agents/deforestation.ts
-  // For now, simulate processing
-  await new Promise((resolve) => setTimeout(resolve, 2000));
+  try {
+    const result = await DeforestationAgent.analyze(
+      intent.location,
+      intent.dateRange
+    );
 
-  return {
-    type: "deforestation_analysis",
-    intent,
-    message:
-      "Deforestation agent not yet implemented. This will connect to the Geospatial Agent API for forest change detection.",
-    placeholder: true,
-  };
+    return {
+      type: "deforestation_analysis",
+      intent,
+      data: result,
+      placeholder: false,
+    };
+  } catch (error) {
+    console.error("Deforestation agent error:", error);
+    return {
+      type: "deforestation_analysis",
+      intent,
+      error: error instanceof Error ? error.message : "Unknown error",
+      placeholder: true,
+    };
+  }
 }
 
 async function delegateToUrbanizationAgent(intent: AnalysisIntent) {
-  // TODO: Implement in Phase 2 - lib/agents/urbanization.ts
-  await new Promise((resolve) => setTimeout(resolve, 2000));
+  try {
+    const result = await UrbanizationAgent.analyze(
+      intent.location,
+      intent.dateRange
+    );
 
-  return {
-    type: "urbanization_analysis",
-    intent,
-    message:
-      "Urbanization agent not yet implemented. This will analyze urban development patterns using satellite imagery.",
-    placeholder: true,
-  };
+    return {
+      type: "urbanization_analysis",
+      intent,
+      data: result,
+      placeholder: false,
+    };
+  } catch (error) {
+    console.error("Urbanization agent error:", error);
+    return {
+      type: "urbanization_analysis",
+      intent,
+      error: error instanceof Error ? error.message : "Unknown error",
+      placeholder: true,
+    };
+  }
 }
 
 async function delegateToChangeDetectionAgent(intent: AnalysisIntent) {
-  // TODO: Implement in Phase 2 - lib/agents/change-detection.ts
-  await new Promise((resolve) => setTimeout(resolve, 2000));
+  try {
+    const result = await ChangeDetectionAgent.analyze(
+      intent.location,
+      intent.dateRange
+    );
 
-  return {
-    type: "change_detection_analysis",
-    intent,
-    message:
-      "Change detection agent not yet implemented. This will perform satellite-based land use change analysis.",
-    placeholder: true,
-  };
+    return {
+      type: "change_detection_analysis",
+      intent,
+      data: result,
+      placeholder: false,
+    };
+  } catch (error) {
+    console.error("Change detection agent error:", error);
+    return {
+      type: "change_detection_analysis",
+      intent,
+      error: error instanceof Error ? error.message : "Unknown error",
+      placeholder: true,
+    };
+  }
 }
 
 async function delegateToGentrificationAgent(intent: AnalysisIntent) {

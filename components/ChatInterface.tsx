@@ -9,6 +9,7 @@ import { cn } from "@/lib/utils";
 import { RealDataAPIClient } from "./QueryProcessor";
 import type { EnhancedQueryResult, AnalysisJobStatus } from "@/lib/types";
 import { StreamingText } from "@/components/ui/streaming-text";
+import { Markdown } from "@/components/ui/markdown";
 
 // Expose Unified API base URL for client-side calls
 const UNIFIED_API_BASE =
@@ -109,6 +110,12 @@ export default function ChatInterface({
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [currentInput, setCurrentInput] = useState("");
   const [isProcessing, setIsProcessing] = useState(false);
+  const [currentLocation, setCurrentLocation] = useState<string | null>(null);
+  const [currentAnalysisType, setCurrentAnalysisType] = useState<string | null>(
+    null
+  );
+  const [lastAnalysisData, setLastAnalysisData] =
+    useState<EnhancedQueryResult | null>(null);
   const hasProcessedInitialQuery = useRef(false);
   const pollingIntervals = useRef<Map<string, NodeJS.Timeout>>(new Map());
   const messagesRef = useRef<ChatMessage[]>([]);
@@ -419,66 +426,131 @@ export default function ChatInterface({
     [getNumber, getString]
   );
 
+  // NEW: AI-powered analysis function
+  const generateAIInsights = useCallback(
+    async (
+      result: EnhancedQueryResult,
+      status: AnalysisJobStatus,
+      userQuery: string
+    ): Promise<string> => {
+      // If we have satellite data, use AI to analyze it
+      if (result.satelliteData && result.statistics) {
+        try {
+          const response = await fetch("/api/ai-satellite-analysis", {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json",
+            },
+            body: JSON.stringify({
+              satelliteData: result.satelliteData,
+              statistics: result.statistics,
+              analysisType: result.analysisType || "change_detection",
+              userQuery: userQuery,
+              polygonData: result.polygons,
+            }),
+          });
+
+          if (response.ok) {
+            const aiAnalysis = await response.json();
+            if (aiAnalysis.success) {
+              return aiAnalysis.insights;
+            } else if (aiAnalysis.fallbackInsights) {
+              return aiAnalysis.fallbackInsights;
+            }
+          }
+        } catch (error) {
+          console.error("AI analysis failed:", error);
+        }
+      }
+
+      // Fallback to basic analysis
+      return generateBasicInsights(result, status);
+    },
+    []
+  );
+
+  // Basic insights as fallback
+  const generateBasicInsights = useCallback(
+    (result: EnhancedQueryResult, status: AnalysisJobStatus): string => {
+      const analysisType = result.analysisType || "change detection";
+      const elapsed = Math.round(status.elapsedTime / 1000);
+      const location = result.city || "the analyzed area";
+
+      if (analysisType === "deforestation") {
+        const stats = result.statistics as any;
+        return `I've completed analyzing forest changes in ${location}! 🌳
+
+The satellite analysis took ${elapsed} seconds and reveals interesting patterns in forest cover. ${
+          stats?.forestLossPercentage > 10
+            ? `The data shows significant forest loss of ${stats.forestLossPercentage.toFixed(
+                1
+              )}%, which could indicate active deforestation or land conversion activities.`
+            : stats?.forestLossPercentage > 3
+            ? `There's moderate forest cover change of ${stats.forestLossPercentage.toFixed(
+                1
+              )}%, suggesting some logging or natural changes.`
+            : "Forest cover appears relatively stable with minimal changes detected."
+        }
+
+This analysis helps us understand environmental changes and can inform conservation efforts in the region.`;
+      }
+
+      if (analysisType === "urbanization") {
+        const stats = result.statistics as any;
+        return `Great! I've analyzed urban development in ${location} 🏙️
+
+After ${elapsed} seconds of processing satellite imagery, I can see the urbanization patterns clearly. ${
+          stats?.urbanGrowthPercentage > 15
+            ? `The area shows rapid urban expansion of ${stats.urbanGrowthPercentage.toFixed(
+                1
+              )}%, indicating significant economic growth and development activity.`
+            : stats?.urbanGrowthPercentage > 5
+            ? `There's steady urban growth of ${stats.urbanGrowthPercentage.toFixed(
+                1
+              )}%, suggesting planned development and controlled expansion.`
+            : "Urban development appears controlled with minimal new construction detected."
+        }
+
+This type of analysis is valuable for urban planning and infrastructure development.`;
+      }
+
+      // General change detection
+      const changePercentage = result.statistics?.changePercentage || 0;
+      return `I've completed the satellite analysis for ${location}! 🛰️
+
+After ${elapsed} seconds of processing, the data reveals ${changePercentage.toFixed(
+        1
+      )}% land use change in this region. ${
+        changePercentage > 10
+          ? "This indicates significant landscape transformation that could be due to development, agriculture, or environmental factors."
+          : changePercentage > 2
+          ? "There are moderate changes detected, suggesting ongoing land use activities."
+          : "The area appears relatively stable with minimal changes."
+      }
+
+The high-resolution satellite analysis provides valuable insights into how this landscape is evolving over time.`;
+    },
+    []
+  );
+
+  // Success message (updated to use AI analysis)
+  const generateSuccessMessage = useCallback(
+    async (
+      result: EnhancedQueryResult,
+      status: AnalysisJobStatus,
+      userQuery: string
+    ): Promise<string> => {
+      // Use AI-powered analysis
+      return await generateAIInsights(result, status, userQuery);
+    },
+    [generateAIInsights]
+  );
+
   // Progress message (stable)
   const getProgressMessage = useCallback(
     (status: AnalysisJobStatus): string => {
       const elapsed = Math.round(status.elapsedTime / 1000);
       return `${status.progress} (${elapsed}s elapsed)`;
-    },
-    []
-  );
-
-  // Success message (stable)
-  const generateSuccessMessage = useCallback(
-    (result: EnhancedQueryResult, status: AnalysisJobStatus): string => {
-      const analysisType = result.analysisType || "change detection";
-      const elapsed = Math.round(status.elapsedTime / 1000);
-
-      const insightsArr = result.insights ?? [];
-
-      return `# Analysis Complete! 🎉
-
-**📊 Results Summary:**
-• **Analysis Type**: ${
-        analysisType.charAt(0).toUpperCase() +
-        analysisType.slice(1).replace("_", " ")
-      }
-• **Processing Time**: ${elapsed} seconds
-• **Areas Detected**: ${result.polygons.length}
-• **Time Period**: ${result.summary.timeRange || "Recent analysis"}
-
-**🛰️ Change Detection Analysis:**
-• Multi-temporal satellite comparison completed
-• Land use transformation patterns identified
-• High-resolution change mapping performed
-
-## 🤖 AI Insights & Recommendations
-
-${insightsArr.map((insight) => `${insight}`).join("\n\n")}
-
-## 📈 Data Quality & Availability
-
-${
-  result.satelliteData
-    ? "✅ **Satellite Imagery**: High-resolution before/after comparison available"
-    : "ℹ️ **Basic Analysis**: Standard analysis completed without satellite imagery"
-}
-${
-  result.statistics
-    ? "✅ **Detailed Statistics**: Comprehensive metrics and measurements available"
-    : "ℹ️ **Summary Stats**: Basic analysis statistics provided"
-}
-
-## 🗺️ Interactive Features
-
-The map has been updated with analysis results. ${
-        result.satelliteData
-          ? "**Click 'Analytics' tab** to view detailed statistics and satellite imagery comparison."
-          : "**Switch to Analytics view** to explore the data in detail."
-      }
-
----
-*Analysis powered by advanced satellite imagery AI and geospatial machine learning models.*`;
     },
     []
   );
@@ -529,7 +601,7 @@ The map has been updated with analysis results. ${
                   population: 50000,
                   avgPropertyValue: "₹75,00,000",
                   ward: "Test Ward",
-                  city: "Pune",
+                  city: "Test City",
                 },
               },
             ],
@@ -546,7 +618,7 @@ The map has been updated with analysis results. ${
               "💡 To enable satellite analysis: Ensure the Geospatial Agent API is running.",
               "🔍 For development: This fallback data allows you to test basic UI features.",
             ],
-            city: "Pune",
+            city: "Demo Location",
             dataSource: {
               propertyData: "Test Data Source",
               riskData: "Test Risk Data",
@@ -610,7 +682,7 @@ The map has been updated to highlight the relevant areas. You can explore the de
 
 **Possible solutions:**
 • The application may need API keys configured for full functionality
-• Try a simpler query like "Show me wards in Pune with high property values"
+• Try a simpler query like "Show me wards in a specific city with high property values"
 • Check the browser console for more detailed error information
 
 **Note:** The application should work with demo data even without API keys. If this persists, there may be a configuration issue.`,
@@ -665,9 +737,11 @@ The map has been updated to highlight the relevant areas. You can explore the de
             // Process the results
             if (jobStatus.data) {
               const enhancedResult = transformAnalysisResult(jobStatus.data);
-              const successMessage = generateSuccessMessage(
+              const successMessage = await generateSuccessMessage(
                 enhancedResult,
-                jobStatus
+                jobStatus,
+                messagesRef.current[messagesRef.current.length - 2]?.content ||
+                  ""
               );
 
               setMessages((prev) =>
@@ -710,11 +784,11 @@ The map has been updated to highlight the relevant areas. You can explore the de
 **Try these solutions:**
 • Retry with a different location or smaller date range
 • Check if the Geospatial Agent API is running (http://localhost:8001)
-• Simplify your query (e.g., "show deforestation near Mumbai")
+• Simplify your query (e.g., "show deforestation near a specific city")
 
 **Fallback options:**
 • Use basic property analysis queries
-• Try demo data with "show me wards in Pune"`;
+• Try demo data with "show me wards in a specific city"`;
 
             setMessages((prev) =>
               prev.map((msg) =>
@@ -765,7 +839,195 @@ The map has been updated to highlight the relevant areas. You can explore the de
     ]
   );
 
-  // NEW: Enhanced query submission with Unified API (with graceful fallbacks)
+  // NEW: NLP Query Analysis function
+  const analyzeQuery = useCallback(
+    async (
+      inputQuery: string
+    ): Promise<{
+      isNewLocationQuery: boolean;
+      isFollowUpQuestion: boolean;
+      followUpResponse?: string;
+      requiresNewAnalysis: boolean;
+      extractedLocation?: string;
+      analysisType?: string;
+      confidence?: number;
+      intent?: string;
+    }> => {
+      try {
+        const chatHistory = messages.map((msg) => ({
+          role: msg.role,
+          content: msg.content,
+          data: msg.data,
+        }));
+
+        const response = await fetch("/api/nlp-query-analysis", {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({
+            query: inputQuery,
+            chatHistory,
+            currentLocation,
+            currentAnalysisType,
+          }),
+        });
+
+        if (response.ok) {
+          const analysis = await response.json();
+          return {
+            isNewLocationQuery: analysis.isNewLocationQuery,
+            isFollowUpQuestion: analysis.isFollowUpQuestion,
+            followUpResponse: analysis.followUpResponse,
+            requiresNewAnalysis: analysis.requiresNewAnalysis,
+            extractedLocation: analysis.extractedLocation,
+            analysisType: analysis.analysisType,
+            confidence: analysis.confidence,
+            intent: analysis.intent,
+          };
+        }
+      } catch (error) {
+        console.error("NLP analysis failed:", error);
+      }
+
+      // Fallback: enhanced pattern matching with better location extraction
+      const query = inputQuery.toLowerCase();
+
+      // Enhanced location extraction patterns
+      const extractLocationFallback = (text: string): string | null => {
+        // Pattern 1: "near/around/in [location]"
+        const nearPatterns = [
+          /(?:near|around|in|at|of)\s+([a-zA-Z\s]+?)(?:\s|$|,|\?|!)/i,
+          /(?:deforestation|urbanization|changes?)\s+(?:near|around|in|at|of)\s+([a-zA-Z\s]+?)(?:\s|$|,|\?|!)/i,
+        ];
+
+        for (const pattern of nearPatterns) {
+          const match = text.match(pattern);
+          if (match && match[1]) {
+            const location = match[1].trim();
+            if (
+              !["the", "this", "that", "area", "region", "place"].includes(
+                location.toLowerCase()
+              )
+            ) {
+              return location;
+            }
+          }
+        }
+
+        // Pattern 2: Direct city/location mentions
+        const cityPatterns = [
+          /(mumbai|delhi|bangalore|pune|kolkata|chennai|hyderabad|ahmedabad|gurgaon|noida|mysore)/i,
+          /(london|paris|tokyo|new york|berlin|sydney|toronto|los angeles|chicago|boston)/i,
+          /(amazon|sahara|himalaya|andes|sahel|congo|nile|ganges)/i,
+          /(india|china|usa|america|brazil|russia|canada|australia|europe|africa|asia)/i,
+          /(infosys|wipro|tcs|microsoft|google|apple|facebook|amazon)\s+([a-zA-Z]+)/i,
+        ];
+
+        for (const pattern of cityPatterns) {
+          const match = text.match(pattern);
+          if (match) {
+            return match[0];
+          }
+        }
+
+        return null;
+      };
+
+      const extractedLocation = extractLocationFallback(inputQuery);
+      const hasLocation = Boolean(extractedLocation);
+
+      // Enhanced analysis type detection
+      let analysisType = null;
+      if (
+        query.includes("forest") ||
+        query.includes("deforest") ||
+        query.includes("tree")
+      ) {
+        analysisType = "deforestation";
+      } else if (
+        query.includes("urban") ||
+        query.includes("city") ||
+        query.includes("development") ||
+        query.includes("expansion") ||
+        query.includes("growth")
+      ) {
+        analysisType = "urbanization";
+      } else if (
+        query.includes("change") ||
+        query.includes("detect") ||
+        query.includes("monitor") ||
+        query.includes("analysis")
+      ) {
+        analysisType = "change_detection";
+      }
+
+      const isFollowUp =
+        currentLocation &&
+        /\b(what|how|why|explain|tell me more|percentage|area|implications|causes)\b/.test(
+          query
+        ) &&
+        !hasLocation;
+
+      return {
+        isNewLocationQuery: hasLocation,
+        isFollowUpQuestion: isFollowUp,
+        followUpResponse: isFollowUp
+          ? `I'd be happy to provide more insights about the ${currentLocation} analysis. Could you be more specific about what aspect you'd like me to explain?`
+          : undefined,
+        requiresNewAnalysis: hasLocation,
+        extractedLocation: extractedLocation,
+        analysisType: analysisType,
+        confidence: 0.7,
+        intent: hasLocation
+          ? `New ${
+              analysisType || "satellite"
+            } analysis request for ${extractedLocation}`
+          : isFollowUp
+          ? "Follow-up question about previous analysis"
+          : "General query",
+      };
+    },
+    [messages, currentLocation, currentAnalysisType]
+  );
+
+  // NEW: Handle follow-up questions without satellite analysis
+  const handleFollowUpQuestion = useCallback(
+    async (inputQuery: string, messageId: string, followUpResponse: string) => {
+      setMessages((prev) =>
+        prev.map((msg) =>
+          msg.id === messageId
+            ? {
+                ...msg,
+                content: "Processing your follow-up question...",
+                isLoading: true,
+              }
+            : msg
+        )
+      );
+
+      // Simulate processing time for better UX
+      await new Promise((resolve) => setTimeout(resolve, 1000));
+
+      const assistantMessage: ChatMessage = {
+        id: messageId,
+        role: "assistant",
+        content: followUpResponse,
+        timestamp: new Date(),
+        data: lastAnalysisData || undefined,
+        isStreaming: true,
+      };
+
+      setMessages((prev) =>
+        prev.map((msg) => (msg.id === messageId ? assistantMessage : msg))
+      );
+
+      setIsProcessing(false);
+    },
+    [lastAnalysisData]
+  );
+
+  // NEW: Enhanced query submission with NLP analysis for follow-up detection
   const handleQuerySubmit = useCallback(
     async (query?: string) => {
       const inputQuery = query || currentInput.trim();
@@ -781,7 +1043,7 @@ The map has been updated to highlight the relevant areas. You can explore the de
       const loadingMessage: ChatMessage = {
         id: generateMessageId(),
         role: "assistant",
-        content: "Starting analysis...",
+        content: "Analyzing your query...",
         timestamp: new Date(),
         isLoading: true,
       };
@@ -790,64 +1052,115 @@ The map has been updated to highlight the relevant areas. You can explore the de
       setCurrentInput("");
       setIsProcessing(true);
 
-      const finalizeSuccess = (
-        unifiedPayload: UnifiedAnalyzeResponse,
-        placeholderProgress?: string
-      ) => {
-        const statusFromAPI: UnifiedStatus =
-          unifiedPayload.status &&
-          ["PENDING", "PROCESSING", "COMPLETE", "FAILED"].includes(
-            unifiedPayload.status
-          )
-            ? unifiedPayload.status
-            : "COMPLETE";
-
-        const statusObj: AnalysisJobStatus = {
-          jobId: unifiedPayload.jobId || "n/a",
-          status: statusFromAPI,
-          progress:
-            unifiedPayload.progress ||
-            placeholderProgress ||
-            "Analysis complete",
-          elapsedTime: unifiedPayload.elapsedTime || 0,
-          data: unifiedPayload.data,
-        };
-
-        const envelope: UnifiedAnalysisDataEnvelope = {
-          ...unifiedPayload.data,
-          elapsedTime: unifiedPayload.elapsedTime,
-        };
-
-        const enhancedResult = transformAnalysisResult(envelope);
-        const successMessage = generateSuccessMessage(
-          enhancedResult,
-          statusObj
-        );
-
-        setMessages((prev) =>
-          prev.map((msg) =>
-            msg.id === loadingMessage.id
-              ? {
-                  ...msg,
-                  content: successMessage,
-                  data: enhancedResult,
-                  isLoading: false,
-                  isStreaming: true,
-                  jobId: statusObj.jobId,
-                  analysisStatus: statusObj,
-                }
-              : msg
-          )
-        );
-
-        onMapUpdate?.(enhancedResult);
-        setIsProcessing(false);
-        onAnalysisStart?.(null);
-      };
-
       try {
+        // Step 1: Analyze the query to determine if it's a follow-up or new location request
+        const queryAnalysis = await analyzeQuery(inputQuery);
+
+        if (
+          queryAnalysis.isFollowUpQuestion &&
+          queryAnalysis.followUpResponse
+        ) {
+          // Handle follow-up question without satellite analysis
+          await handleFollowUpQuestion(
+            inputQuery,
+            loadingMessage.id,
+            queryAnalysis.followUpResponse
+          );
+          return;
+        }
+
+        if (!queryAnalysis.requiresNewAnalysis) {
+          // If it's not a location query and not a clear follow-up, provide a general response
+          const generalResponse = `I understand you're asking about satellite analysis. To provide specific insights, I need either:
+
+**For new analysis:**
+- Mention a specific location (e.g., "Mumbai", "Amazon rainforest", "near Delhi")
+- Specify the type of analysis (deforestation, urbanization, land use change)
+
+**For follow-up questions:**
+- Ask about the current analysis results (e.g., "What's the percentage?", "Can you explain more?")
+
+Current context: ${
+            currentLocation
+              ? `We're analyzing ${currentLocation}`
+              : "No active analysis"
+          }
+
+What would you like to explore?`;
+
+          await handleFollowUpQuestion(
+            inputQuery,
+            loadingMessage.id,
+            generalResponse
+          );
+          return;
+        }
+
+        // Step 2: Proceed with satellite analysis for new location queries
         onAnalysisStart?.("pending");
 
+        const finalizeSuccess = async (
+          unifiedPayload: UnifiedAnalyzeResponse,
+          placeholderProgress?: string
+        ) => {
+          const statusFromAPI: UnifiedStatus =
+            unifiedPayload.status &&
+            ["PENDING", "PROCESSING", "COMPLETE", "FAILED"].includes(
+              unifiedPayload.status
+            )
+              ? unifiedPayload.status
+              : "COMPLETE";
+
+          const statusObj: AnalysisJobStatus = {
+            jobId: unifiedPayload.jobId || "n/a",
+            status: statusFromAPI,
+            progress:
+              unifiedPayload.progress ||
+              placeholderProgress ||
+              "Analysis complete",
+            elapsedTime: unifiedPayload.elapsedTime || 0,
+            data: unifiedPayload.data,
+          };
+
+          const envelope: UnifiedAnalysisDataEnvelope = {
+            ...unifiedPayload.data,
+            elapsedTime: unifiedPayload.elapsedTime,
+          };
+
+          const enhancedResult = transformAnalysisResult(envelope);
+          const successMessage = await generateSuccessMessage(
+            enhancedResult,
+            statusObj,
+            inputQuery
+          );
+
+          setMessages((prev) =>
+            prev.map((msg) =>
+              msg.id === loadingMessage.id
+                ? {
+                    ...msg,
+                    content: successMessage,
+                    data: enhancedResult,
+                    isLoading: false,
+                    isStreaming: true,
+                    jobId: statusObj.jobId,
+                    analysisStatus: statusObj,
+                  }
+                : msg
+            )
+          );
+
+          // Update context state
+          setCurrentLocation(enhancedResult.city || null);
+          setCurrentAnalysisType(enhancedResult.analysisType || null);
+          setLastAnalysisData(enhancedResult);
+
+          onMapUpdate?.(enhancedResult);
+          setIsProcessing(false);
+          onAnalysisStart?.(null);
+        };
+
+        // Try Unified API endpoints for satellite analysis
         const locationResp = await fetch(
           `${UNIFIED_API_BASE}/analyze/location`,
           {
@@ -893,10 +1206,11 @@ The map has been updated to highlight the relevant areas. You can explore the de
             )
           );
 
-          finalizeSuccess(unifiedData);
+          await finalizeSuccess(unifiedData);
           return;
         }
 
+        // Try location search endpoint
         const searchResp = await fetch(`${UNIFIED_API_BASE}/locations/search`, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
@@ -959,18 +1273,29 @@ The map has been updated to highlight the relevant areas. You can explore the de
                 )
               );
 
-              finalizeSuccess(unifiedData);
+              await finalizeSuccess(unifiedData);
               return;
             }
           }
         }
 
+        // Fallback to legacy analysis API
         const response = await fetch("/api/analysis", {
           method: "POST",
           headers: {
             "Content-Type": "application/json",
           },
-          body: JSON.stringify({ query: inputQuery }),
+          body: JSON.stringify({
+            query: inputQuery,
+            nlpAnalysis: queryAnalysis.isNewLocationQuery
+              ? {
+                  extractedLocation: queryAnalysis.extractedLocation,
+                  analysisType: queryAnalysis.analysisType,
+                  confidence: queryAnalysis.confidence,
+                  intent: queryAnalysis.intent,
+                }
+              : undefined,
+          }),
         });
 
         if (!response.ok) {
@@ -1007,13 +1332,15 @@ The map has been updated to highlight the relevant areas. You can explore the de
       } catch (error) {
         console.error("Analysis submission failed:", error);
 
-        console.log("Falling back to original query processing...");
+        console.log("Falling back to legacy query processing...");
         await handleLegacyQuery(inputQuery, loadingMessage.id);
       }
     },
     [
       currentInput,
       isProcessing,
+      analyzeQuery,
+      handleFollowUpQuestion,
       onMapUpdate,
       onAnalysisStart,
       startJobPolling,
@@ -1055,8 +1382,8 @@ The map has been updated to highlight the relevant areas. You can explore the de
       )}
     >
       <div className="border-b border-border/50 p-4">
-        <h2 className="text-lg font-semibold text-foreground">AI Assistant</h2>
-        <p className="text-sm text-muted-foreground">
+        <h2 className="text-lg font-semibold text-foreground">Garuda Lens</h2>
+        <p className="text-sm max-w-sm text-muted-foreground">
           Ask questions about deforestation, urbanization, and climate change
           using satellite imagery
         </p>
@@ -1143,13 +1470,9 @@ The map has been updated to highlight the relevant areas. You can explore the de
                           }}
                         />
                       ) : message.role === "assistant" ? (
-                        <div className="prose prose-sm max-w-none dark:prose-invert">
-                          {message.content.split("\n").map((line, i) => (
-                            <p key={i} className="mb-2 last:mb-0">
-                              {line}
-                            </p>
-                          ))}
-                        </div>
+                        <Markdown className="prose prose-sm max-w-none dark:prose-invert prose-headings:text-foreground prose-p:text-foreground prose-strong:text-foreground prose-em:text-foreground prose-li:text-foreground prose-code:text-foreground prose-pre:bg-muted prose-pre:text-foreground">
+                          {message.content}
+                        </Markdown>
                       ) : (
                         <div>{message.content}</div>
                       )}

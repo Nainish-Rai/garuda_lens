@@ -57,12 +57,12 @@ export default function MapInterface({
   onAnalysisComplete,
 }: MapInterfaceProps) {
   const mapRef = useRef<LeafletMap>(null);
-  const [currentCity, setCurrentCity] = useState<string>("pune");
+  const [currentCity, setCurrentCity] = useState<string>("dynamic");
   const [viewState, setViewState] = useState<ViewState>(() => {
-    const cityConfig = CITY_CONFIGS[currentCity];
+    // Default to a global view that can be adjusted dynamically
     return {
-      center: cityConfig.center,
-      zoom: cityConfig.zoom,
+      center: [20.5937, 78.9629], // Center of India
+      zoom: 5,
     };
   });
   const [mapBounds, setMapBounds] = useState<LatLngBounds | undefined>();
@@ -307,18 +307,6 @@ export default function MapInterface({
     };
   }, []);
 
-  // Update view when city changes
-  const handleCityChange = (newCity: string) => {
-    if (CITY_CONFIGS[newCity]) {
-      setCurrentCity(newCity);
-      const cityConfig = CITY_CONFIGS[newCity];
-      setViewState({
-        center: cityConfig.center,
-        zoom: cityConfig.zoom,
-      });
-    }
-  };
-
   // State for base map data
   const [baseMapData, setBaseMapData] = useState<
     Array<{
@@ -344,65 +332,17 @@ export default function MapInterface({
   useEffect(() => {
     const loadBaseMapData = async () => {
       try {
-        // Fetch ward boundary data for the current city
-        const response = await fetch(`/api/risk?city=${currentCity}`);
-        if (response.ok) {
-          const data = await response.json();
-
-          // Convert ward data to map features
-          const features =
-            data.wards?.map(
-              (ward: {
-                ward: string;
-                coordinates: [number, number];
-                population?: number;
-                avgPropertyValue?: string;
-                currentRisk: { riskScore: number };
-                riskTrend: { currentScore: number; baselineScore: number };
-              }) => ({
-                type: "Feature" as const,
-                geometry: {
-                  type: "Polygon" as const,
-                  coordinates: [
-                    // Generate approximate polygon from center coordinates
-                    [
-                      [ward.coordinates[1] - 0.01, ward.coordinates[0] - 0.01],
-                      [ward.coordinates[1] + 0.01, ward.coordinates[0] - 0.01],
-                      [ward.coordinates[1] + 0.01, ward.coordinates[0] + 0.01],
-                      [ward.coordinates[1] - 0.01, ward.coordinates[0] + 0.01],
-                      [ward.coordinates[1] - 0.01, ward.coordinates[0] - 0.01],
-                    ],
-                  ],
-                },
-                properties: {
-                  name: ward.ward,
-                  priceChange: Math.round(
-                    ((ward.riskTrend.currentScore -
-                      ward.riskTrend.baselineScore) /
-                      ward.riskTrend.baselineScore) *
-                      100
-                  ),
-                  floodRisk: Math.round(ward.currentRisk.riskScore * 100),
-                  area: ward.ward.split(" ")[0],
-                  ward: ward.ward,
-                  city: data.city,
-                  population: ward.population,
-                  avgPropertyValue: ward.avgPropertyValue,
-                },
-              })
-            ) || [];
-
-          setBaseMapData(features);
-        }
+        // Skip loading base map data since cities are specified dynamically
+        // Users will get data from their chat queries instead
+        setBaseMapData([]);
       } catch (error) {
         console.error("Failed to load base map data:", error);
-        // Keep empty array if load fails
         setBaseMapData([]);
       }
     };
 
     loadBaseMapData();
-  }, [currentCity]);
+  }, []);
 
   // Use external query result only
   const displayQueryResult = externalQueryResult;
@@ -701,22 +641,11 @@ export default function MapInterface({
         </div>
       )}
 
-      {/* City Selector & Layer Controls - Minimal */}
+      {/* Layer Controls Only - No City Selector */}
       <div className="absolute top-4 left-4 z-10">
         <Card className="bg-card/70 backdrop-blur-md shadow-md border border-border/30">
           <CardContent className="p-2">
-            {/* City Selector */}
-            <select
-              value={currentCity}
-              onChange={(e) => handleCityChange(e.target.value)}
-              className="w-full mb-2 px-2 py-1 text-xs border border-border/50 rounded focus:outline-none focus:ring-1 focus:ring-ring bg-background text-foreground"
-            >
-              {Object.entries(CITY_CONFIGS).map(([key, config]) => (
-                <option key={key} value={key}>
-                  {config.name}
-                </option>
-              ))}
-            </select>
+            {/* Removed City Selector - Users specify cities via chat */}
 
             {/* Layer Toggles */}
             <div className="space-y-1">

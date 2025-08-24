@@ -28,7 +28,7 @@ interface AnalysisIntent {
 export async function POST(request: NextRequest) {
   try {
     const body = await request.json();
-    const { query } = body;
+    const { query, nlpAnalysis } = body;
 
     if (!query || typeof query !== "string") {
       return NextResponse.json(
@@ -50,8 +50,8 @@ export async function POST(request: NextRequest) {
     // Return job info immediately for async processing
     const pollingUrl = `/api/analysis/status/${jobId}`;
 
-    // Start background processing (don't await)
-    processAnalysisAsync(jobId, query);
+    // Start background processing with NLP analysis context
+    processAnalysisAsync(jobId, query, nlpAnalysis);
 
     return NextResponse.json({
       jobId,
@@ -72,7 +72,11 @@ export async function POST(request: NextRequest) {
 }
 
 // Background processing function
-async function processAnalysisAsync(jobId: string, query: string) {
+async function processAnalysisAsync(
+  jobId: string,
+  query: string,
+  nlpAnalysis?: any
+) {
   try {
     // Update job status
     const updateJob = (status: string, data?: unknown, error?: string) => {
@@ -88,10 +92,41 @@ async function processAnalysisAsync(jobId: string, query: string) {
       }
     };
 
-    updateJob("Classifying query intent with Gemini AI...");
+    updateJob("Processing query with enhanced NLP analysis...");
 
-    // 1. Intent Classification using Gemini AI
-    const intentResult = await classifyIntent(query);
+    // 1. Use NLP analysis if available, otherwise classify intent
+    let intentResult: AnalysisIntent;
+
+    if (
+      nlpAnalysis &&
+      nlpAnalysis.extractedLocation &&
+      nlpAnalysis.analysisType
+    ) {
+      // Use the improved NLP analysis results
+      const analysisTypeMap: Record<string, AnalysisIntent["intent"]> = {
+        deforestation: "DEFORESTATION",
+        urbanization: "URBANIZATION",
+        change_detection: "CHANGE_DETECTION",
+      };
+
+      intentResult = {
+        intent: analysisTypeMap[nlpAnalysis.analysisType] || "CHANGE_DETECTION",
+        location: nlpAnalysis.extractedLocation,
+        dateRange: ["2020-01-01", "2024-12-31"],
+        confidence: (nlpAnalysis.confidence || 0.5) * 100,
+        extractedParams: {
+          timeFrame: `Analysis of ${nlpAnalysis.extractedLocation}`,
+        },
+      };
+
+      updateJob(
+        `Intent: ${intentResult.intent}, Location: ${intentResult.location}`
+      );
+    } else {
+      // Fallback to Gemini classification
+      updateJob("Classifying query intent with Gemini AI...");
+      intentResult = await classifyIntent(query);
+    }
 
     updateJob("Intent classified. Delegating to appropriate agent...");
 

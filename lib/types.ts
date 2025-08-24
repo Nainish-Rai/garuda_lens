@@ -135,6 +135,14 @@ export interface EnhancedQueryResult {
     aiProcessed?: boolean;
     geminiUsed?: boolean;
   };
+  // NEW: Add satellite imagery support
+  satelliteData?: SatelliteImageData;
+  analysisType?:
+    | "deforestation"
+    | "urbanization"
+    | "change_detection"
+    | "gentrification";
+  statistics?: ChangeDetectionStats | DeforestationStats | UrbanizationStats;
 }
 
 // City-specific configurations
@@ -213,4 +221,59 @@ export interface RiskAPIResponse extends APIResponse<WardData | WardData[]> {
   city: string;
   ward?: string;
   year?: number;
+}
+
+// NEW: Task 4 - Enhanced types for satellite imagery and async job handling
+export interface SatelliteImageData {
+  beforeImage: string; // base64 encoded
+  afterImage: string; // base64 encoded
+  overlayImage: string; // base64 encoded
+  maskImage: string; // base64 encoded
+  analysisMetadata: {
+    location: string;
+    dateRange: [string, string];
+    resolution: string;
+    algorithm: string;
+    analysisDate: string;
+  };
+}
+
+export interface AnalysisJobStatus {
+  jobId: string;
+  status: "PENDING" | "PROCESSING" | "COMPLETE" | "FAILED";
+  progress: string;
+  elapsedTime: number;
+  data?: any;
+  error?: string;
+}
+
+export interface ChangeDetectionStats {
+  totalChangeArea: number;
+  changePercentage: number;
+  changedPixels: number;
+  totalPixels: number;
+}
+
+export interface DeforestationStats {
+  deforestedArea: number;
+  forestLossPercentage: number;
+  originalForestArea: number;
+  remainingForestArea: number;
+  treeCoverLoss: number;
+  averageTreeDensityChange: number;
+}
+
+export interface UrbanizationStats {
+  newUrbanArea: number;
+  urbanGrowthPercentage: number;
+  populationImpact: {
+    estimatedPopulation: number;
+    populationDensity: number;
+    confidence: number;
+  };
+  urbanGrowthMetrics: {
+    developmentRate: number;
+    infrastructureExpansion: number;
+    averageUrbanDensityChange: number;
+  };
 }

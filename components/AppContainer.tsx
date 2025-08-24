@@ -24,6 +24,8 @@ export default function AppContainer() {
   const [appState, setAppState] = useState<AppState>("landing");
   const [currentQuery, setCurrentQuery] = useState<string>("");
   const [mapData, setMapData] = useState<EnhancedQueryResult | null>(null);
+  // NEW: Task 4 - Track current analysis job
+  const [currentJobId, setCurrentJobId] = useState<string | null>(null);
 
   const handleQuerySubmit = (query: string) => {
     setCurrentQuery(query);
@@ -32,6 +34,11 @@ export default function AppContainer() {
 
   const handleMapUpdate = (data: EnhancedQueryResult) => {
     setMapData(data);
+  };
+
+  // NEW: Handle analysis job start
+  const handleAnalysisStart = (jobId: string | null) => {
+    setCurrentJobId(jobId);
   };
 
   return (
@@ -45,6 +52,22 @@ export default function AppContainer() {
       >
         <ThemeToggle />
       </motion.div>
+
+      {/* NEW: Analysis Status Indicator */}
+      {/* <AnimatePresence>
+        {currentJobId && (
+          <motion.div
+            initial={{ opacity: 0, y: -20 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0, y: -20 }}
+            className="absolute top-4 left-1/2 transform -translate-x-1/2 z-50"
+          >
+            <div className="bg-blue-500/90 backdrop-blur-sm text-white px-4 py-2 rounded-full text-sm font-medium shadow-lg">
+              🛰️ Satellite Analysis Running... (Job: {currentJobId.slice(0, 8)})
+            </div>
+          </motion.div>
+        )}
+      </AnimatePresence> */}
 
       <AnimatePresence mode="wait">
         {appState === "landing" ? (
@@ -100,6 +123,7 @@ export default function AppContainer() {
                 <ChatInterface
                   initialQuery={currentQuery}
                   onMapUpdate={handleMapUpdate}
+                  onAnalysisStart={handleAnalysisStart}
                   className="h-full"
                 />
               </motion.div>
@@ -133,7 +157,7 @@ export default function AppContainer() {
             animate={{ opacity: 1, scale: 1, y: 0 }}
             exit={{ opacity: 0, scale: 0.8, y: 20 }}
             transition={{ delay: 0.8, duration: 0.3 }}
-            className="absolute top-6 left-100 z-40"
+            className="absolute top-6 left-6 z-40"
           >
             <motion.button
               whileHover={{ scale: 1.05 }}
@@ -142,6 +166,7 @@ export default function AppContainer() {
                 setAppState("landing");
                 setCurrentQuery("");
                 setMapData(null);
+                setCurrentJobId(null);
               }}
               className="bg-card/80 backdrop-blur-sm border border-border/50 rounded-full px-6 py-3 text-sm font-medium text-foreground hover:bg-card/90 transition-all duration-200 shadow-lg hover:shadow-xl"
             >

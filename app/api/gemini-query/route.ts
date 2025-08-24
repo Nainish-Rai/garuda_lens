@@ -35,7 +35,7 @@ export async function POST(request: NextRequest) {
     // Try to get enhanced insights from Gemini AI
     if (process.env.GEMINI_API_KEY && results.length > 0) {
       try {
-        const model = genAI.getGenerativeModel({ model: "gemini-2.5-flash" });
+        const model = genAI.getGenerativeModel({ model: "gemini-2.0-flash" });
 
         // Create context for Gemini
         const context = `

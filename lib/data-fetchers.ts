@@ -686,13 +686,25 @@ export async function fetchGeospatialAnalysis(
         location_name: request.location,
         start_date: request.dateRange?.[0] || "2020-01-01",
         end_date: request.dateRange?.[1] || "2024-12-31",
+        analysis_type: request.analysisType || "change_detection",
+        include_images: true, // Ensure images are included
       };
     } else if (request.coordinates) {
       endpoint = "/analyze";
       body = {
-        coordinates: request.coordinates,
-        start_date: request.dateRange?.[0] || "2020-01-01",
-        end_date: request.dateRange?.[1] || "2024-12-31",
+        location: {
+          lat: request.coordinates[0],
+          lon: request.coordinates[1],
+        },
+        time_range: {
+          start: request.dateRange?.[0] || "2020-01-01",
+          end: request.dateRange?.[1] || "2024-12-31",
+        },
+        analysis_type: request.analysisType || "change_detection",
+        include_images: true, // Ensure images are included
+        zoom_level: "City-Wide (0.025°)",
+        resolution: "Standard (5m)",
+        overlay_alpha: 0.4,
       };
     } else {
       throw new Error("Either location or coordinates must be provided");

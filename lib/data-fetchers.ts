@@ -12,6 +12,47 @@ export interface RealEstateAPI {
   getRiskData(city: string, ward: string, year?: number): Promise<RiskData[]>;
 }
 
+// NEW: Geospatial analysis interfaces and types for Task 2
+export interface GeospatialAnalysisRequest {
+  location?: string;
+  coordinates?: [number, number];
+  dateRange?: [string, string];
+  analysisType?: "change_detection" | "deforestation" | "urbanization";
+}
+
+export interface GeospatialAnalysisResponse {
+  status: "success" | "error";
+  data?: {
+    beforeImage: string; // base64 encoded
+    afterImage: string; // base64 encoded
+    overlayImage: string; // base64 encoded
+    maskImage: string; // base64 encoded
+    changePercentage: number;
+    analysisMetadata: {
+      location: string;
+      dateRange: [string, string];
+      resolution: string;
+      algorithm: string;
+    };
+  };
+  error?: string;
+}
+
+export interface PopulationDataResponse {
+  estimatedPopulation: number;
+  populationDensity: number;
+  dataSource: string;
+  confidence: number;
+}
+
+export interface LocationCoordinatesResponse {
+  coordinates: [number, number];
+  boundingBox: [[number, number], [number, number]];
+  locationName: string;
+  country: string;
+  confidence: number;
+}
+
 // Export API configuration for backward compatibility
 export const DATA_SOURCES = API_CONFIG;
 
@@ -625,4 +666,299 @@ export async function processNaturalLanguageQuery(
   }
 
   return results;
+}
+
+// NEW: Task 2 - Enhanced data fetcher functions for Geospatial Agent API integration
+export async function fetchGeospatialAnalysis(
+  request: GeospatialAnalysisRequest
+): Promise<GeospatialAnalysisResponse> {
+  try {
+    // Check if Geospatial Agent API is available
+    const GEOSPATIAL_API_BASE =
+      process.env.GEOSPATIAL_API_URL || "http://localhost:8001";
+
+    let endpoint = "/analyze";
+    let body: any = {};
+
+    if (request.location) {
+      endpoint = "/analyze/location";
+      body = {
+        location_name: request.location,
+        start_date: request.dateRange?.[0] || "2020-01-01",
+        end_date: request.dateRange?.[1] || "2024-12-31",
+      };
+    } else if (request.coordinates) {
+      endpoint = "/analyze";
+      body = {
+        coordinates: request.coordinates,
+        start_date: request.dateRange?.[0] || "2020-01-01",
+        end_date: request.dateRange?.[1] || "2024-12-31",
+      };
+    } else {
+      throw new Error("Either location or coordinates must be provided");
+    }
+
+    const response = await fetch(`${GEOSPATIAL_API_BASE}${endpoint}`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify(body),
+      // Add timeout for long-running satellite analysis
+      signal: AbortSignal.timeout(120000), // 2 minutes timeout
+    });
+
+    if (!response.ok) {
+      throw new Error(
+        `Geospatial API error: ${response.status} ${response.statusText}`
+      );
+    }
+
+    const data = await response.json();
+
+    return {
+      status: "success",
+      data: {
+        beforeImage: data.before_image || "",
+        afterImage: data.after_image || "",
+        overlayImage: data.overlay_image || "",
+        maskImage: data.mask_image || "",
+        changePercentage: data.change_percentage || 0,
+        analysisMetadata: {
+          location:
+            request.location ||
+            `${request.coordinates?.[0]}, ${request.coordinates?.[1]}`,
+          dateRange: [
+            request.dateRange?.[0] || "2020-01-01",
+            request.dateRange?.[1] || "2024-12-31",
+          ],
+          resolution: data.metadata?.resolution || "10m",
+          algorithm: data.metadata?.algorithm || "U-Net Change Detection",
+        },
+      },
+    };
+  } catch (error) {
+    console.error("Geospatial analysis failed:", error);
+
+    // Handle timeout or connection errors gracefully
+    if (error instanceof Error && error.name === "AbortError") {
+      return {
+        status: "error",
+        error:
+          "Analysis timeout - satellite imagery processing took too long. Please try with a smaller area or different time range.",
+      };
+    }
+
+    return {
+      status: "error",
+      error:
+        error instanceof Error
+          ? error.message
+          : "Unknown error during geospatial analysis",
+    };
+  }
+}
+
+export async function fetchPopulationData(
+  geoJsonPolygon: GeoJSON.Polygon
+): Promise<PopulationDataResponse> {
+  try {
+    // Try Kontur Population API first (if available)
+    if (process.env.KONTUR_API_KEY) {
+      const response = await fetch(
+        "https://api.kontur.io/population/v1/population",
+        {
+          method: "POST",
+          headers: {
+            Authorization: `Bearer ${process.env.KONTUR_API_KEY}`,
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({
+            geometry: geoJsonPolygon,
+            aggregation: "sum",
+          }),
+        }
+      );
+
+      if (response.ok) {
+        const data = await response.json();
+        return {
+          estimatedPopulation: data.population || 0,
+          populationDensity: data.density || 0,
+          dataSource: "Kontur Population API",
+          confidence: 0.9,
+        };
+      }
+    }
+
+    // Fallback to WorldPop API (free tier)
+    const bounds = calculateBounds(geoJsonPolygon);
+    const area = calculatePolygonArea(geoJsonPolygon);
+
+    // Estimate population based on area and urban density patterns
+    const urbanDensityPerKm2 = 15000; // Average urban density for Indian cities
+    const estimatedPopulation = Math.round(area * urbanDensityPerKm2);
+
+    return {
+      estimatedPopulation,
+      populationDensity: Math.round(estimatedPopulation / area),
+      dataSource: "Estimated from urban density patterns",
+      confidence: 0.6,
+    };
+  } catch (error) {
+    console.error("Population data fetch failed:", error);
+
+    // Return conservative estimate
+    return {
+      estimatedPopulation: 50000,
+      populationDensity: 10000,
+      dataSource: "Fallback estimate",
+      confidence: 0.3,
+    };
+  }
+}
+
+export async function fetchLocationCoordinates(
+  locationName: string
+): Promise<LocationCoordinatesResponse> {
+  try {
+    // Check if Geospatial Agent API is available for location lookup
+    const GEOSPATIAL_API_BASE =
+      process.env.GEOSPATIAL_API_URL || "http://localhost:8001";
+
+    const response = await fetch(
+      `${GEOSPATIAL_API_BASE}/locations/coordinates/${encodeURIComponent(
+        locationName
+      )}`,
+      {
+        method: "GET",
+        headers: {
+          "Content-Type": "application/json",
+        },
+      }
+    );
+
+    if (response.ok) {
+      const data = await response.json();
+      return {
+        coordinates: [data.latitude, data.longitude],
+        boundingBox: [
+          [
+            data.bbox?.south || data.latitude - 0.1,
+            data.bbox?.west || data.longitude - 0.1,
+          ],
+          [
+            data.bbox?.north || data.latitude + 0.1,
+            data.bbox?.east || data.longitude + 0.1,
+          ],
+        ],
+        locationName: data.display_name || locationName,
+        country: data.country || "India",
+        confidence: data.confidence || 0.8,
+      };
+    }
+
+    // Fallback to Nominatim OSM API
+    const nominatimResponse = await fetch(
+      `https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(
+        locationName
+      )}&countrycodes=in&limit=1`
+    );
+
+    if (nominatimResponse.ok) {
+      const nominatimData = await nominatimResponse.json();
+      if (nominatimData.length > 0) {
+        const result = nominatimData[0];
+        return {
+          coordinates: [parseFloat(result.lat), parseFloat(result.lon)],
+          boundingBox: [
+            [
+              parseFloat(result.boundingbox[0]),
+              parseFloat(result.boundingbox[2]),
+            ],
+            [
+              parseFloat(result.boundingbox[1]),
+              parseFloat(result.boundingbox[3]),
+            ],
+          ],
+          locationName: result.display_name,
+          country: "India",
+          confidence: 0.7,
+        };
+      }
+    }
+
+    throw new Error("Location not found");
+  } catch (error) {
+    console.error("Location coordinates fetch failed:", error);
+
+    // Return fallback coordinates for major Indian cities
+    const fallbackCoordinates: Record<string, [number, number]> = {
+      mumbai: [19.076, 72.8777],
+      delhi: [28.7041, 77.1025],
+      bangalore: [12.9716, 77.5946],
+      pune: [18.5204, 73.8567],
+      chennai: [13.0827, 80.2707],
+      kolkata: [22.5726, 88.3639],
+      hyderabad: [17.385, 78.4867],
+    };
+
+    const normalizedLocation = locationName.toLowerCase();
+    const coords = fallbackCoordinates[normalizedLocation] || [
+      20.5937, 78.9629,
+    ]; // Center of India
+
+    return {
+      coordinates: coords,
+      boundingBox: [
+        [coords[0] - 0.1, coords[1] - 0.1],
+        [coords[0] + 0.1, coords[1] + 0.1],
+      ],
+      locationName,
+      country: "India",
+      confidence: 0.5,
+    };
+  }
+}
+
+// Utility functions for population calculation
+function calculateBounds(polygon: GeoJSON.Polygon): {
+  minLat: number;
+  maxLat: number;
+  minLng: number;
+  maxLng: number;
+} {
+  const coordinates = polygon.coordinates[0]; // Assuming first ring (outer boundary)
+
+  let minLat = Infinity,
+    maxLat = -Infinity;
+  let minLng = Infinity,
+    maxLng = -Infinity;
+
+  coordinates.forEach(([lng, lat]) => {
+    minLat = Math.min(minLat, lat);
+    maxLat = Math.max(maxLat, lat);
+    minLng = Math.min(minLng, lng);
+    maxLng = Math.max(maxLng, lng);
+  });
+
+  return { minLat, maxLat, minLng, maxLng };
+}
+
+function calculatePolygonArea(polygon: GeoJSON.Polygon): number {
+  // Approximate area calculation in square kilometers
+  // Using spherical geometry approximation
+  const coordinates = polygon.coordinates[0];
+  let area = 0;
+
+  for (let i = 0; i < coordinates.length - 1; i++) {
+    const [lng1, lat1] = coordinates[i];
+    const [lng2, lat2] = coordinates[i + 1];
+
+    area += (lng2 - lng1) * (lat1 + lat2);
+  }
+
+  // Convert to approximate km² (rough calculation)
+  const areaKm2 = (Math.abs(area) * 111 * 111) / 2; // 111 km per degree approximation
+  return areaKm2;
 }

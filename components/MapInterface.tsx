@@ -181,9 +181,9 @@ export default function MapInterface({
   const [mapBounds, setMapBounds] = useState<LatLngBounds | undefined>();
 
   const [activeLayers, setActiveLayers] = useState({
-    propertyHeatmap: true,
-    climateRisk: true,
-    boundaries: true,
+    propertyHeatmap: false,
+    climateRisk: false,
+    boundaries: false,
   });
 
   const [currentJob, setCurrentJob] = useState<AnalysisJobStatus | null>(null);
@@ -830,9 +830,9 @@ export default function MapInterface({
                   className="w-3 h-3 rounded border-border bg-background"
                 />
                 <Droplets className="h-3 w-3" />
-                <span>Risk</span>
+                <span>Area</span>
               </label>
-              <label className="flex items-center space-x-1.5 text-xs text-foreground cursor-pointer">
+              {/* <label className="flex items-center space-x-1.5 text-xs text-foreground cursor-pointer">
                 <input
                   type="checkbox"
                   checked={activeLayers.boundaries}
@@ -846,7 +846,7 @@ export default function MapInterface({
                 />
                 <MapPin className="h-3 w-3" />
                 <span>Bounds</span>
-              </label>
+              </label> */}
             </div>
           </CardContent>
         </Card>

@@ -132,7 +132,7 @@ export default function LandingPage({
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             {[
               "Show NDVI vegetation changes in Mumbai from 2020 to 2024",
-              "Analyze deforestation patterns in Amazon rainforest since 2020",
+              "Analyze development in 'Super Corridor Indore' from 2020 to 2024",
               "Detect urban expansion in Bangalore using satellite imagery",
               "Monitor forest cover changes in Delhi NCR region",
             ].map((example, index) => (

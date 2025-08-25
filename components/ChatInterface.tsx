@@ -778,6 +778,7 @@ export default function ChatInterface({
           location_name: locationName,
           zoom_level: "City-Wide (0.025°)",
           resolution: "Standard (5m)",
+          sensitivity: 0.3,
           overlay_alpha: 0.4,
         }),
       });

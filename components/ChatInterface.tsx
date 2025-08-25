@@ -10,6 +10,8 @@ import { RealDataAPIClient } from "./QueryProcessor";
 import type { EnhancedQueryResult, AnalysisJobStatus } from "@/lib/types";
 import { StreamingText } from "@/components/ui/streaming-text";
 import { Markdown } from "@/components/ui/markdown";
+import { useVoiceInput } from "@/lib/hooks/use-voice-input";
+import { MicrophoneIcon } from "@/components/ui/icons/microphone";
 
 // Expose Unified API base URL for client-side calls
 const UNIFIED_API_BASE =
@@ -166,12 +168,19 @@ export default function ChatInterface({
   );
   const [lastAnalysisData, setLastAnalysisData] =
     useState<EnhancedQueryResult | null>(null);
+  const { transcript, isRecording, toggle } = useVoiceInput();
   const hasProcessedInitialQuery = useRef(false);
   const pollingIntervals = useRef<Map<string, NodeJS.Timeout>>(new Map());
-  const messagesRef = useRef<ChatMessage[]>([]);
+  const messagesRef = useRef<ChatMessage[]>(messages);
   React.useEffect(() => {
     messagesRef.current = messages;
   }, [messages]);
+
+  React.useEffect(() => {
+    if (transcript) {
+      setCurrentInput(transcript);
+    }
+  }, [transcript]);
 
   // Helpers to safely extract values (stable)
   const getNumber = useCallback(
@@ -1568,6 +1577,15 @@ ${
             ) : (
               <Send className="h-4 w-4" />
             )}
+          </Button>
+          <Button
+            onClick={toggle}
+            size="sm"
+            className={`h-11 w-11 px-0 ${
+              isRecording ? "bg-red-500" : "bg-white/80"
+            }`}
+          >
+            <MicrophoneIcon className="h-5 w-5" />
           </Button>
         </div>
       </div>

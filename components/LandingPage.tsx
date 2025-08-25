@@ -10,6 +10,8 @@ import {
 import { Button } from "@/components/ui/button";
 import { Send } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { useVoiceInput } from "@/lib/hooks/use-voice-input";
+import { MicrophoneIcon } from "@/components/ui/icons/microphone";
 
 interface LandingPageProps {
   onQuerySubmit: (query: string) => void;
@@ -23,6 +25,13 @@ export default function LandingPage({
   const [query, setQuery] = useState("");
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [lastSubmittedQuery, setLastSubmittedQuery] = useState("");
+  const { transcript, isRecording, toggle } = useVoiceInput();
+
+  React.useEffect(() => {
+    if (transcript) {
+      setQuery(transcript);
+    }
+  }, [transcript]);
 
   const handleSubmit = () => {
     const trimmedQuery = query.trim();
@@ -112,6 +121,15 @@ export default function LandingPage({
                 >
                   <Send className="h-5 w-5 mr-2" />
                   Analyze
+                </Button>
+                <Button
+                  onClick={toggle}
+                  size="icon"
+                  className={`rounded-2xl h-12 w-12 ${
+                    isRecording ? "bg-red-500" : "bg-white/80"
+                  }`}
+                >
+                  <MicrophoneIcon className="h-6 w-6" />
                 </Button>
               </PromptInputActions>
             </div>
